@@ -3,7 +3,7 @@
 import paho.mqtt.client as mqtt
 import threading
 import time
-from flask import Flask, render_template_string
+from flask import Flask, render_template_string, request # request needed for shutdown
 
 # --- Configuration ---
 BROKER_HOST = "localhost"     # Runs on same server as broker usually
@@ -30,6 +30,7 @@ state_lock = threading.Lock()
 # --- MQTT Listener Logic for Web Server ---
 mqtt_client = None
 mqtt_connected = False
+exit_app = threading.Event() # To signal MQTT thread to stop
 
 def on_web_connect(client, userdata, flags, rc):
     global mqtt_connected
@@ -56,7 +57,9 @@ def on_web_message(client, userdata, msg):
         if topic == TRIGGER_TOPIC and payload == TRIGGER_PAYLOAD:
             print(f"[WEB-MQTT] Correct trigger received! Updating status to GREEN and revealing flag.")
             with state_lock:
-                security_state = "GREEN"
+                # Only change state if it's currently RED
+                if security_state == "RED":
+                    security_state = "GREEN"
             # No need to publish anything back from here
         else:
             print(f"[WEB-MQTT] Ignoring message (doesn't match trigger).")
@@ -69,13 +72,18 @@ def on_web_disconnect(client, userdata, rc):
     mqtt_connected = False
     if rc != 0 and not exit_app.is_set():
         print(f"[WEB-MQTT] Listener unexpectedly disconnected (rc={rc}). Will retry connection...")
-        # Note: reconnect logic is handled in the main loop now
+        # Reconnect logic is handled by the loop in mqtt_listener_thread
 
 def mqtt_listener_thread():
     global mqtt_client, mqtt_connected
     print("[WEB-MQTT] Starting MQTT listener thread...")
-    # Use a unique client ID for the web listener
-    mqtt_client = mqtt.Client(client_id="hidden-website-status-listener")
+    # Use the correct callback API version
+    try:
+        mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="hidden-website-status-listener")
+    except AttributeError:
+        print("[WEB-MQTT] Using older MQTT Callback API Version 1.")
+        mqtt_client = mqtt.Client(client_id="hidden-website-status-listener")
+
     mqtt_client.on_connect = on_web_connect
     mqtt_client.on_subscribe = on_web_subscribe
     mqtt_client.on_message = on_web_message
@@ -88,45 +96,47 @@ def mqtt_listener_thread():
          if not mqtt_connected:
               try:
                    print(f"[WEB-MQTT] Attempting connection to {BROKER_HOST}...")
-                   # Add a timeout to the connect call
                    mqtt_client.connect(BROKER_HOST, BROKER_PORT, 60)
-                   mqtt_connected = True # Tentatively set to true
-                   mqtt_client.loop_forever() # Blocking call, handles reconnects implicitly after initial connect
+                   mqtt_connected = True # Tentatively set true
+                   # loop_forever() is blocking and handles reconnects after initial success
+                   mqtt_client.loop_forever()
+                   # If loop_forever exits, it means disconnect happened.
+                   print("[WEB-MQTT] loop_forever exited. Will attempt reconnect cycle.")
+                   mqtt_connected = False # Ensure flag is reset if loop exits
+
               except TimeoutError:
                    print("[WEB-MQTT] Connection attempt timed out. Retrying in 10s...")
-                   mqtt_connected = False
-                   time.sleep(10)
+                   mqtt_connected = False; time.sleep(10)
               except ConnectionRefusedError:
                    print("[WEB-MQTT] Connection refused. Retrying in 10s...")
-                   mqtt_connected = False
-                   time.sleep(10)
-              except OSError as e: # Catch other potential network errors
+                   mqtt_connected = False; time.sleep(10)
+              except OSError as e:
                    print(f"[WEB-MQTT] Network error during connect/loop: {e}. Retrying in 10s...")
-                   mqtt_connected = False
-                   time.sleep(10)
+                   mqtt_connected = False; time.sleep(10)
               except Exception as e:
                    print(f"[WEB-MQTT] Unexpected MQTT error: {e}. Retrying in 10s...")
-                   mqtt_connected = False # Mark as disconnected on other errors
-                   time.sleep(10)
+                   mqtt_connected = False; time.sleep(10)
          else:
-             # If loop_forever exits unexpectedly (e.g., network error not caught by reconnect)
-             # We need to reset mqtt_connected and loop again
-             print("[WEB-MQTT] loop_forever exited. Checking connection...")
-             mqtt_connected = False # Assume disconnected if loop exits
-             time.sleep(5) # Brief pause before retry
+             # This part should theoretically not be reached if loop_forever is working
+             print("[WEB-MQTT] In unexpected state (connected=True but loop not running?). Resetting.")
+             mqtt_connected = False
+             time.sleep(5) # Brief pause before retry cycle
 
-
-    print("[WEB-MQTT] Listener thread exiting.")
+    print("[WEB-MQTT] Listener thread received exit signal.")
     if mqtt_client and mqtt_client.is_connected():
         try:
+            # loop_stop needs to be called *before* disconnect sometimes
+            print("[WEB-MQTT] Stopping MQTT loop...")
             mqtt_client.loop_stop()
+            print("[WEB-MQTT] Disconnecting MQTT client...")
             mqtt_client.disconnect()
-        except Exception: pass
+        except Exception as e:
+            print(f"[WEB-MQTT] Error during listener cleanup: {e}")
+    print("[WEB-MQTT] Listener thread finished.")
 
 
 # --- Flask Web App ---
 app = Flask(__name__)
-exit_app = threading.Event() # To signal MQTT thread to stop
 
 @app.route('/')
 def status_page():
@@ -134,7 +144,7 @@ def status_page():
         current_state = security_state
         flag_to_display = FINAL_FLAG if current_state == "GREEN" else None
 
-    # Updated HTML template
+    # Corrected HTML template with centering fix
     html_template = """
     <!DOCTYPE html>
     <html>
@@ -142,26 +152,44 @@ def status_page():
         <title>Prison Security Status</title>
         <meta http-equiv="refresh" content="3">
         <style>
-            body { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #222; color: white; font-family: monospace, sans-serif; }
-            .status-light { width: 200px; height: 200px; border-radius: 50%; border: 10px solid #555; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin-bottom: 30px; }
+            body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #222; color: white; font-family: monospace, sans-serif; }
+            .content-wrapper { display: flex; flex-direction: column; align-items: center; }
+            .status-light { width: 200px; height: 200px; border-radius: 50%; border: 10px solid #555; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin-bottom: 20px; color: white; text-align: center; }
             .red { background: radial-gradient(circle, rgba(255,50,50,1) 0%, rgba(180,0,0,1) 100%); box-shadow: 0 0 30px #ff0000; }
             .green { background: radial-gradient(circle, rgba(50,255,50,1) 0%, rgba(0,180,0,1) 100%); box-shadow: 0 0 30px #00ff00; }
-            .flag-box { margin-top: 20px; padding: 15px; background-color: #333; border: 1px solid #666; border-radius: 5px; font-size: 1.2em; }
+            .flag-box { margin-top: 10px; padding: 15px; background-color: #333; border: 1px solid #666; border-radius: 5px; font-size: 1.2em; text-align: center; }
         </style>
     </head>
     <body>
-        {% if state == "RED" %}
-            <div class="status-light red">LOCKED DOWN</div>
-            <div>Status: Secure</div>
-        {% else %}
-            <div class="status-light green">SYSTEMS DISABLED</div>
-            <div>Status: Compromised!</div>
-            <div class="flag-box">FLAG: {{ flag_value }}</div>
-        {% endif %}
+        <div class="content-wrapper"> {# Wrap content #}
+            {% if state == "RED" %}
+                <div class="status-light red">LOCKED<br>DOWN</div> {# Use <br> for line break #}
+                <div>Status: Secure</div>
+            {% else %}
+                <div class="status-light green">SYSTEMS<br>DISABLED</div> {# Use <br> for line break #}
+                <div>Status: Compromised!</div>
+                <div class="flag-box">FLAG: {{ flag_value }}</div>
+            {% endif %}
+        </div>
     </body>
     </html>
     """
     return render_template_string(html_template, state=current_state, flag_value=flag_to_display)
+
+# Add a basic shutdown function for Flask's dev server (doesn't work with production servers)
+def shutdown_server():
+    func = request.environ.get('werkzeug.server.shutdown')
+    if func is None:
+        print('Warning: Not running with the Werkzeug Server, cannot shutdown programmatically.')
+        # For non-dev servers, you'd typically kill the process
+    else:
+        func()
+
+@app.route('/shutdown', methods=['POST']) # Optional: for remote shutdown if needed
+def shutdown():
+    print("Shutdown requested via HTTP...")
+    shutdown_server()
+    return 'Server shutting down...'
 
 # --- Main Execution ---
 if __name__ == '__main__':
@@ -173,18 +201,19 @@ if __name__ == '__main__':
     print("[*] This server shows the security status light.")
     print(f"[*] Monitoring MQTT topic '{TRIGGER_TOPIC}' for payload '{TRIGGER_PAYLOAD}'...")
     try:
-        app.run(host=WEB_HOST, port=WEB_PORT, debug=False)
+        # Run Flask app (use werkzeug's built-in server for simplicity)
+        # Turn off reloader to prevent running MQTT thread twice
+        app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
     except KeyboardInterrupt:
-        print("\n[*] Shutdown signal received...")
+        print("\n[*] Shutdown signal received (KeyboardInterrupt)...")
     finally:
         print("[*] Signaling MQTT listener thread to exit...")
-        exit_app.set()
+        exit_app.set() # Tell MQTT thread to stop its loop
         if mqtt_client:
-            # Gently try to disconnect MQTT client from main thread as well
-            try: mqtt_client.disconnect()
+            try: mqtt_client.disconnect() # Attempt disconnect from main thread too
             except Exception: pass
         print("[*] Waiting for MQTT listener thread to join...")
-        mqtt_thread.join(timeout=3)
+        mqtt_thread.join(timeout=3) # Wait max 3 seconds for thread cleanup
         if mqtt_thread.is_alive():
              print("[!] MQTT thread did not exit cleanly.")
         print("[*] Web server shut down.")
