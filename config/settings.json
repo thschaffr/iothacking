@@ -5,15 +5,7 @@
     "BROKER_PASSWORD": "iot",  // <-- Make sure this is your actual password
     "PROTOCOL_VERSION": "3.1.1",
     "TOPICS": [
-        // { // Lamp topic commented out
-        //     "TYPE": "multiple",
-        //     "PREFIX": "lamp",
-        //     "RANGE_START": 1,
-        //     "RANGE_END": 2,
-        //     "TIME_INTERVAL": 4,
-        //     "DATA": [ /* ... lamp data ... */ ]
-        // },
-        { // Keep ONLY air_quality for this test
+        {
             "TYPE": "single",
             "PREFIX": "air_quality",
             "TIME_INTERVAL": 6,
@@ -33,25 +25,5 @@
                 }
             ]
         }
-        // , { // Temperature topic commented out
-        //     "TYPE": "list",
-        //     "PREFIX": "temperature",
-        //     "LIST": ["roof", "basement"],
-        //     "TIME_INTERVAL": 8,
-        //     "DATA": [ /* ... temperature data ... */ ]
-        // }
-        // , { // Freezer topic commented out
-        //     "TYPE": "single",
-        //     "PREFIX": "freezer",
-        //     "TIME_INTERVAL": 6,
-        //     "DATA": [ /* ... freezer data ... */ ]
-        // }
-        // , { // Location topic commented out
-        //     "TYPE": "single",
-        //     "PREFIX": "location",
-        //     "TIME_INTERVAL": 5,
-        //     "PAYLOAD_ROOT": { "user_id": "abc123" },
-        //     "DATA": [ /* ... location data ... */ ]
-        // }
     ]
 }
