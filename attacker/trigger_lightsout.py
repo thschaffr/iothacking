@@ -18,7 +18,7 @@ MQTT_USERNAME = "iotuser"     # Username for MQTT
 MQTT_PASSWORD = "iot"         # Password for MQTT
 
 # --- MQTT Callbacks ---
-# *** MODIFIED on_connect signature ***
+# Corrected on_connect signature
 def on_connect(client, userdata, flags, rc, properties=None):
     """Callback for connection results."""
     if rc == 0:
@@ -27,12 +27,11 @@ def on_connect(client, userdata, flags, rc, properties=None):
         publish_command(client)
     else:
         print(f"[!] MQTT Connection failed with code {rc}. Check broker details and credentials.")
-        # Try to signal disconnect or exit if connection fails early
         try:
              client.disconnect()
              client.loop_stop() # Stop loop if connect fails
         except Exception:
-             pass # Ignore errors during early exit cleanup
+             pass
         sys.exit(1) # Exit script if connection fails
 
 def on_publish(client, userdata, mid):
@@ -43,15 +42,16 @@ def on_publish(client, userdata, mid):
     time.sleep(0.5) # Short delay to ensure message is likely sent by broker
     client.disconnect() # This will eventually stop loop_forever
 
-# *** MODIFIED on_disconnect signature (less common change, but good practice) ***
+# Corrected on_disconnect signature and fixed indentation inside
 def on_disconnect(client, userdata, rc, properties=None):
     """Callback for disconnections."""
-     # This is called both on intentional disconnect and errors
-     if rc == 0:
-         print("[*] MQTT connection closed gracefully.")
-     else:
-         print(f"\n[!] Disconnected unexpectedly from MQTT broker (code: {rc}).")
-     # loop_forever() will exit upon disconnect
+    # This is called both on intentional disconnect and errors
+    # *** FIXED INDENTATION HERE ***
+    if rc == 0:
+        print("[*] MQTT connection closed gracefully.")
+    else:
+        print(f"\n[!] Disconnected unexpectedly from MQTT broker (code: {rc}).")
+    # loop_forever() will exit upon disconnect
 
 
 def publish_command(client):
