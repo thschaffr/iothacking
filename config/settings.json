@@ -114,6 +114,69 @@
                     ]
                 }
             ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/command/response",
+            "TIME_INTERVAL": 15,
+            "QOS": 0,
+            "PAYLOAD_ROOT": {
+                "response_type": "command_ack"
+            },
+            "DATA": [
+                {
+                    "NAME": "target",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "prison/celldoor/block_a",
+                        "prison/celldoor/block_b",
+                        "prison/security/control_room",
+                        "prison/power/grid_monitor",
+                        "prison/environment/temp/infirmary",
+                        "prison/guard/patrol_7"
+                    ]
+                },
+                {
+                    "NAME": "command_received",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                       "LOCK",
+                       "UNLOCK",
+                       "SET_ALERT:3",
+                       "RESET_POWER",
+                       "GET_STATUS",
+                       "TRIGGER_ALARM",
+                       "LOCKDOWN",
+                       "CANCEL_ALERT"
+                    ]
+                },
+                {
+                    "NAME": "status",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "SUCCESS",
+                        "SUCCESS",
+                        "SUCCESS",
+                        "PROCESSING",
+                        "SUCCESS",
+                        "FAILURE:AUTH_DENIED",
+                        "SUCCESS",
+                        "FAILURE:INVALID_TARGET",
+                        "SUCCESS"
+                    ]
+                },
+                {
+                   "NAME": "response_id",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                       "RSP-k29d", "RSP-k31a", "RSP-k33f", "RSP-k35b", "RSP-k39z", "RSP-k40p"
+                   ]
+                }
+            ]
         }
     ]
 }
