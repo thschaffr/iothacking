@@ -3,36 +3,37 @@
 import paho.mqtt.client as mqtt
 import threading
 import time
-from flask import Flask, render_template_string, request # request needed for shutdown
+from flask import Flask, render_template_string, request
 
 # --- Configuration ---
-BROKER_HOST = "localhost"     # Runs on same server as broker usually
+BROKER_HOST = "localhost"
 BROKER_PORT = 1883
-MQTT_USERNAME = "iotuser"     # User for the listener
-MQTT_PASSWORD = "iot"         # Password for the listener
+MQTT_USERNAME = "iotuser"
+MQTT_PASSWORD = "iot"
 
 # --- Trigger Configuration ---
-TRIGGER_TOPIC = "prison/security/lightsout/" # The EXACT topic to listen on
-TRIGGER_PAYLOAD = "getout"                 # The EXACT payload to trigger success
+TRIGGER_TOPIC = "prison/security/lightsout/"
+TRIGGER_PAYLOAD = "getout"
 
 # --- CTF Flag ---
-FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}" # Your creative final flag
+FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}"
 
 # --- Web App Configuration ---
-WEB_HOST = '0.0.0.0' # Listen on all interfaces
-WEB_PORT = 5000      # Port for the hidden website
+WEB_HOST = '0.0.0.0'
+WEB_PORT = 5000
 
 # --- Global Status ---
-# Possible states: "RED", "GREEN"
 security_state = "RED"
 state_lock = threading.Lock()
 
 # --- MQTT Listener Logic for Web Server ---
 mqtt_client = None
 mqtt_connected = False
-exit_app = threading.Event() # To signal MQTT thread to stop
+exit_app = threading.Event()
 
-def on_web_connect(client, userdata, flags, rc):
+# *** MODIFIED on_web_connect signature ***
+def on_web_connect(client, userdata, flags, rc, properties=None):
+    """Callback for web server's MQTT connection."""
     global mqtt_connected
     if rc == 0:
         print("[WEB-MQTT] Listener connected successfully.")
@@ -51,7 +52,7 @@ def on_web_message(client, userdata, msg):
     topic = msg.topic
     try:
         payload = msg.payload.decode("utf-8")
-        print(f"[WEB-MQTT] Received on '{topic}': {payload}") # Log received messages
+        print(f"[WEB-MQTT] Received on '{topic}': {payload}")
 
         # Check if it's the exact trigger topic and payload
         if topic == TRIGGER_TOPIC and payload == TRIGGER_PAYLOAD:
@@ -60,16 +61,18 @@ def on_web_message(client, userdata, msg):
                 # Only change state if it's currently RED
                 if security_state == "RED":
                     security_state = "GREEN"
-            # No need to publish anything back from here
         else:
             print(f"[WEB-MQTT] Ignoring message (doesn't match trigger).")
 
     except Exception as e:
         print(f"[WEB-MQTT] Error processing message: {e}")
 
-def on_web_disconnect(client, userdata, rc):
+# *** MODIFIED on_web_disconnect signature ***
+def on_web_disconnect(client, userdata, rc, properties=None):
+    """Callback for web server's MQTT disconnection."""
     global mqtt_connected
     mqtt_connected = False
+    # Only log if it was unexpected
     if rc != 0 and not exit_app.is_set():
         print(f"[WEB-MQTT] Listener unexpectedly disconnected (rc={rc}). Will retry connection...")
         # Reconnect logic is handled by the loop in mqtt_listener_thread
@@ -98,40 +101,20 @@ def mqtt_listener_thread():
                    print(f"[WEB-MQTT] Attempting connection to {BROKER_HOST}...")
                    mqtt_client.connect(BROKER_HOST, BROKER_PORT, 60)
                    mqtt_connected = True # Tentatively set true
-                   # loop_forever() is blocking and handles reconnects after initial success
-                   mqtt_client.loop_forever()
-                   # If loop_forever exits, it means disconnect happened.
+                   mqtt_client.loop_forever() # Blocking call
                    print("[WEB-MQTT] loop_forever exited. Will attempt reconnect cycle.")
                    mqtt_connected = False # Ensure flag is reset if loop exits
-
-              except TimeoutError:
-                   print("[WEB-MQTT] Connection attempt timed out. Retrying in 10s...")
-                   mqtt_connected = False; time.sleep(10)
-              except ConnectionRefusedError:
-                   print("[WEB-MQTT] Connection refused. Retrying in 10s...")
-                   mqtt_connected = False; time.sleep(10)
-              except OSError as e:
-                   print(f"[WEB-MQTT] Network error during connect/loop: {e}. Retrying in 10s...")
-                   mqtt_connected = False; time.sleep(10)
-              except Exception as e:
-                   print(f"[WEB-MQTT] Unexpected MQTT error: {e}. Retrying in 10s...")
-                   mqtt_connected = False; time.sleep(10)
+              except TimeoutError: print("[WEB-MQTT] Connection attempt timed out. Retrying in 10s..."); mqtt_connected = False; time.sleep(10)
+              except ConnectionRefusedError: print("[WEB-MQTT] Connection refused. Retrying in 10s..."); mqtt_connected = False; time.sleep(10)
+              except OSError as e: print(f"[WEB-MQTT] Network error: {e}. Retrying in 10s..."); mqtt_connected = False; time.sleep(10)
+              except Exception as e: print(f"[WEB-MQTT] Unexpected MQTT error: {e}. Retrying in 10s..."); mqtt_connected = False; time.sleep(10)
          else:
-             # This part should theoretically not be reached if loop_forever is working
-             print("[WEB-MQTT] In unexpected state (connected=True but loop not running?). Resetting.")
-             mqtt_connected = False
-             time.sleep(5) # Brief pause before retry cycle
+             print("[WEB-MQTT] In unexpected state. Resetting connection flag."); mqtt_connected = False; time.sleep(5)
 
     print("[WEB-MQTT] Listener thread received exit signal.")
     if mqtt_client and mqtt_client.is_connected():
-        try:
-            # loop_stop needs to be called *before* disconnect sometimes
-            print("[WEB-MQTT] Stopping MQTT loop...")
-            mqtt_client.loop_stop()
-            print("[WEB-MQTT] Disconnecting MQTT client...")
-            mqtt_client.disconnect()
-        except Exception as e:
-            print(f"[WEB-MQTT] Error during listener cleanup: {e}")
+        try: print("[WEB-MQTT] Stopping MQTT loop..."); mqtt_client.loop_stop(); print("[WEB-MQTT] Disconnecting MQTT client..."); mqtt_client.disconnect()
+        except Exception as e: print(f"[WEB-MQTT] Error during listener cleanup: {e}")
     print("[WEB-MQTT] Listener thread finished.")
 
 
@@ -176,44 +159,24 @@ def status_page():
     """
     return render_template_string(html_template, state=current_state, flag_value=flag_to_display)
 
-# Add a basic shutdown function for Flask's dev server (doesn't work with production servers)
-def shutdown_server():
-    func = request.environ.get('werkzeug.server.shutdown')
-    if func is None:
-        print('Warning: Not running with the Werkzeug Server, cannot shutdown programmatically.')
-        # For non-dev servers, you'd typically kill the process
-    else:
-        func()
-
-@app.route('/shutdown', methods=['POST']) # Optional: for remote shutdown if needed
-def shutdown():
-    print("Shutdown requested via HTTP...")
-    shutdown_server()
-    return 'Server shutting down...'
-
 # --- Main Execution ---
 if __name__ == '__main__':
-    # Start MQTT listener in background
     mqtt_thread = threading.Thread(target=mqtt_listener_thread, daemon=True)
     mqtt_thread.start()
 
     print(f"[*] Starting Flask web server on http://{WEB_HOST}:{WEB_PORT}")
-    print("[*] This server shows the security status light.")
     print(f"[*] Monitoring MQTT topic '{TRIGGER_TOPIC}' for payload '{TRIGGER_PAYLOAD}'...")
     try:
-        # Run Flask app (use werkzeug's built-in server for simplicity)
-        # Turn off reloader to prevent running MQTT thread twice
         app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
     except KeyboardInterrupt:
         print("\n[*] Shutdown signal received (KeyboardInterrupt)...")
     finally:
         print("[*] Signaling MQTT listener thread to exit...")
-        exit_app.set() # Tell MQTT thread to stop its loop
+        exit_app.set()
         if mqtt_client:
-            try: mqtt_client.disconnect() # Attempt disconnect from main thread too
+            try: mqtt_client.disconnect()
             except Exception: pass
         print("[*] Waiting for MQTT listener thread to join...")
-        mqtt_thread.join(timeout=3) # Wait max 3 seconds for thread cleanup
-        if mqtt_thread.is_alive():
-             print("[!] MQTT thread did not exit cleanly.")
+        mqtt_thread.join(timeout=3)
+        if mqtt_thread.is_alive(): print("[!] MQTT thread did not exit cleanly.")
         print("[*] Web server shut down.")
