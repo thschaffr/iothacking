@@ -6,32 +6,33 @@ import time
 from flask import Flask, render_template_string, request
 
 # --- Configuration ---
-BROKER_HOST = "localhost"
+BROKER_HOST = "localhost"     # Runs on same server as broker usually
 BROKER_PORT = 1883
-MQTT_USERNAME = "iotuser"
-MQTT_PASSWORD = "iot"
+MQTT_USERNAME = "iotuser"     # User for the listener
+MQTT_PASSWORD = "iot"         # Password for the listener
 
 # --- Trigger Configuration ---
-TRIGGER_TOPIC = "prison/security/lightsout/"
-TRIGGER_PAYLOAD = "getout"
+TRIGGER_TOPIC = "prison/security/lightsout/" # The EXACT topic to listen on
+TRIGGER_PAYLOAD = "getout"                 # The EXACT payload to trigger success
 
 # --- CTF Flag ---
-FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}"
+FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}" # Your creative final flag
 
 # --- Web App Configuration ---
-WEB_HOST = '0.0.0.0'
-WEB_PORT = 5000
+WEB_HOST = '0.0.0.0' # Listen on all interfaces
+WEB_PORT = 5000      # Port for the hidden website
 
 # --- Global Status ---
+# Possible states: "RED", "GREEN"
 security_state = "RED"
 state_lock = threading.Lock()
 
 # --- MQTT Listener Logic for Web Server ---
 mqtt_client = None
 mqtt_connected = False
-exit_app = threading.Event()
+exit_app = threading.Event() # To signal MQTT thread to stop
 
-# *** MODIFIED on_web_connect signature ***
+# Modified on_web_connect signature
 def on_web_connect(client, userdata, flags, rc, properties=None):
     """Callback for web server's MQTT connection."""
     global mqtt_connected
@@ -52,7 +53,7 @@ def on_web_message(client, userdata, msg):
     topic = msg.topic
     try:
         payload = msg.payload.decode("utf-8")
-        print(f"[WEB-MQTT] Received on '{topic}': {payload}")
+        print(f"[WEB-MQTT] Received on '{topic}': {payload}") # Log received messages
 
         # Check if it's the exact trigger topic and payload
         if topic == TRIGGER_TOPIC and payload == TRIGGER_PAYLOAD:
@@ -61,13 +62,14 @@ def on_web_message(client, userdata, msg):
                 # Only change state if it's currently RED
                 if security_state == "RED":
                     security_state = "GREEN"
+            # No need to publish anything back from here
         else:
             print(f"[WEB-MQTT] Ignoring message (doesn't match trigger).")
 
     except Exception as e:
         print(f"[WEB-MQTT] Error processing message: {e}")
 
-# *** MODIFIED on_web_disconnect signature ***
+# Modified on_web_disconnect signature
 def on_web_disconnect(client, userdata, rc, properties=None):
     """Callback for web server's MQTT disconnection."""
     global mqtt_connected
@@ -101,7 +103,7 @@ def mqtt_listener_thread():
                    print(f"[WEB-MQTT] Attempting connection to {BROKER_HOST}...")
                    mqtt_client.connect(BROKER_HOST, BROKER_PORT, 60)
                    mqtt_connected = True # Tentatively set true
-                   mqtt_client.loop_forever() # Blocking call
+                   mqtt_client.loop_forever() # Blocking call, handles reconnects implicitly after initial connect
                    print("[WEB-MQTT] loop_forever exited. Will attempt reconnect cycle.")
                    mqtt_connected = False # Ensure flag is reset if loop exits
               except TimeoutError: print("[WEB-MQTT] Connection attempt timed out. Retrying in 10s..."); mqtt_connected = False; time.sleep(10)
@@ -127,7 +129,7 @@ def status_page():
         current_state = security_state
         flag_to_display = FINAL_FLAG if current_state == "GREEN" else None
 
-    # Corrected HTML template with centering fix
+    # --- MODIFIED HTML Template ---
     html_template = """
     <!DOCTYPE html>
     <html>
@@ -140,23 +142,48 @@ def status_page():
             .status-light { width: 200px; height: 200px; border-radius: 50%; border: 10px solid #555; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin-bottom: 20px; color: white; text-align: center; }
             .red { background: radial-gradient(circle, rgba(255,50,50,1) 0%, rgba(180,0,0,1) 100%); box-shadow: 0 0 30px #ff0000; }
             .green { background: radial-gradient(circle, rgba(50,255,50,1) 0%, rgba(0,180,0,1) 100%); box-shadow: 0 0 30px #00ff00; }
+            .status-text { margin-top: -10px; margin-bottom: 20px; } /* Adjust spacing */
             .flag-box { margin-top: 10px; padding: 15px; background-color: #333; border: 1px solid #666; border-radius: 5px; font-size: 1.2em; text-align: center; }
+
+            /* --- CSS for Blinking Text --- */
+            .cisco-live-message {
+                margin-top: 25px; /* Space below flag */
+                font-size: 1.8em; /* Make it bigger */
+                font-weight: bold;
+                color: #00bceb; /* Cisco blue */
+                text-align: center;
+                animation: blink 1.2s linear infinite; /* Apply animation */
+            }
+
+            @keyframes blink {
+                0% { opacity: 1; }
+                49% { opacity: 1; } /* Stay visible longer */
+                50% { opacity: 0; } /* Blink off */
+                99% { opacity: 0; } /* Stay invisible longer */
+                100% { opacity: 1; }
+            }
+            /* --- End Blinking CSS --- */
+
         </style>
     </head>
     <body>
         <div class="content-wrapper"> {# Wrap content #}
             {% if state == "RED" %}
                 <div class="status-light red">LOCKED<br>DOWN</div> {# Use <br> for line break #}
-                <div>Status: Secure</div>
+                <div class="status-text">Status: Secure</div>
             {% else %}
                 <div class="status-light green">SYSTEMS<br>DISABLED</div> {# Use <br> for line break #}
-                <div>Status: Compromised!</div>
+                <div class="status-text">Status: Compromised!</div>
                 <div class="flag-box">FLAG: {{ flag_value }}</div>
+                {# --- ADDED Blinking Message Div --- #}
+                <div class="cisco-live-message">Enjoy Cisco Live</div>
+                {# --------------------------------- #}
             {% endif %}
         </div>
     </body>
     </html>
     """
+    # --- END OF MODIFIED HTML ---
     return render_template_string(html_template, state=current_state, flag_value=flag_to_display)
 
 # --- Main Execution ---
