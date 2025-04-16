@@ -1,9 +1,12 @@
 import json
 import time
+import threading
 import paho.mqtt.client as mqtt
 
-class Topic:
+
+class Topic(threading.Thread):
     def __init__(self, topic_url, broker_settings, client_settings, topic_data, topic_payload_root):
+        super().__init__()  # required for threading
         self.topic_url = topic_url
         self.broker_settings = broker_settings
         self.client_settings = client_settings
