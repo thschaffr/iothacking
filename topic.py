@@ -1,6 +1,6 @@
 # --- START OF FILE topic.py ---
 
-import time
+import time # Ensure time is imported
 import json
 import threading
 import paho.mqtt.client as mqtt
@@ -68,7 +68,7 @@ class TopicDataRawValue(TopicDataBase):
             if self.restart_on_end: self.current_index = 0
             else: print(f"Info: End of non-restarting raw values for '{self.name}'."); self.is_active = False; return None
         value = self.values[self.current_index]
-        if isinstance(value, dict) and isinstance(self.value_default, dict): value = {**self.value_default, **value}
+        if isinstance(value, dict) and isinstance(self.value_default, dict): value = {**self.value_default, **value} # Python 3.5+ dict merge
         self.current_index += 1; return value
 
 class TopicDataMathExpression(TopicDataBase):
@@ -81,7 +81,7 @@ class TopicDataMathExpression(TopicDataBase):
      def generate_value(self):
          if not self.is_active or self._compiled_expr is None: return None
          delta = random.uniform(self.min_delta, self.max_delta); self.x += delta
-         if self.x > self.interval_end: self.x = self.interval_start + (self.x - self.interval_end)
+         if self.x > self.interval_end: self.x = self.interval_start + (self.x - self.interval_end) # Wrap around
          try:
              result = eval(self._compiled_expr, {"math": math}, {"x": self.x})
              return round(result, 4) if isinstance(result, (int, float)) else None
@@ -95,21 +95,21 @@ class Topic(threading.Thread):
     def __init__(self,
                  broker_settings: BrokerSettings,
                  topic_url: str,
-                 topic_data_config: List[dict], # Use imported List
-                 topic_payload_root: Dict,     # Use imported Dict
+                 topic_data_config: List[dict],
+                 topic_payload_root: Dict,
                  client_settings: ClientSettings):
-        threading.Thread.__init__(self, daemon=True) # Daemon threads exit if main program exits
+        threading.Thread.__init__(self, daemon=True)
 
         self.broker_settings = broker_settings
         self.topic_url = topic_url
         self.topic_data = self._load_topic_data(topic_data_config)
-        self.topic_payload_root = topic_payload_root or {} # Ensure it's a dict
+        self.topic_payload_root = topic_payload_root or {}
         self.client_settings = client_settings
 
-        self._stop_event = threading.Event() # For graceful shutdown
-        self.client: Optional[mqtt.Client] = None # Use imported Optional
+        self._stop_event = threading.Event()
+        self.client: Optional[mqtt.Client] = None
 
-    def _load_topic_data(self, topic_data_configs: List[dict]) -> List[TopicDataBase]: # Use imported List
+    def _load_topic_data(self, topic_data_configs: List[dict]) -> List[TopicDataBase]:
         """Loads and initializes data generator instances based on config."""
         generators = []
         for config in topic_data_configs:
@@ -128,7 +128,6 @@ class Topic(threading.Thread):
     def _connect(self) -> bool:
         """Establishes connection to the MQTT broker."""
         if self.client and self.client.is_connected():
-             # print(f"INFO: Client for {self.topic_url} already connected.") # Reduce noise
              return True
 
         base_client_id = f"simulator-{self.topic_url.replace('/', '_')}"
@@ -146,12 +145,13 @@ class Topic(threading.Thread):
             self.client.on_publish = self._on_publish
 
             if self.broker_settings.username:
-                # print(f"INFO: Setting username '{self.broker_settings.username}' for {self.topic_url}") # Reduce noise
                 self.client.username_pw_set(self.broker_settings.username, self.broker_settings.password)
 
-            # print(f"INFO: Connecting client for {self.topic_url} to {self.broker_settings.url}:{self.broker_settings.port}...") # Reduce noise
             self.client.connect(self.broker_settings.url, self.broker_settings.port, keepalive=60)
             self.client.loop_start()
+            # We might need a very brief pause here too AFTER loop_start,
+            # but let's try the pause in run() first.
+            # time.sleep(0.1)
             return True
         except Exception as e:
              print(f"ERROR: Connect failed for {self.topic_url}: {e}")
@@ -161,55 +161,60 @@ class Topic(threading.Thread):
     def disconnect(self):
         """Signals the thread to stop and cleans up the MQTT client."""
         if not self._stop_event.is_set():
-             # print(f"INFO: Disconnect requested for {self.topic_url}.") # Reduce noise
              self._stop_event.set()
 
         client_instance = self.client
         if client_instance:
             try:
-                 # print(f"INFO: Stopping network loop for {self.topic_url}...") # Reduce noise
                  client_instance.loop_stop()
-                 # print(f"INFO: Disconnecting client for {self.topic_url}...") # Reduce noise
+                 # Short timeout before disconnect to allow loop stop processing
+                 time.sleep(0.1)
                  client_instance.disconnect()
             except Exception as e:
-                 # Don't warn if stopping event is set, as errors during shutdown are common
-                 if not self._stop_event.is_set():
+                 if not self._stop_event.is_set(): # Avoid warnings during normal stop
                      print(f"WARNING: Exception during disconnect for {self.topic_url}: {e}")
             finally:
                  self.client = None
-                 # print(f"INFO: Client for {self.topic_url} disconnected.") # Reduce noise
 
 
+    # ================================================================
+    # --- MODIFIED run Method starts here ---
+    # ================================================================
     def run(self):
         """Main thread loop: connect, generate data, publish, wait."""
-        # print(f"INFO: Starting thread for topic: {self.topic_url}") # Reduce noise
         if not self._connect():
             print(f"ERROR: Initial connection failed for {self.topic_url}. Thread exiting.")
-            return
+            return # Exit thread if initial connection fails
+
+        # --- ADDED STABILIZATION PAUSE HERE ---
+        # Give the connection and background loop thread time to settle
+        print(f"INFO: Stabilizing connection for {self.topic_url}...")
+        time.sleep(0.5) # Wait for 0.5 seconds
+        # ------------------------------------
 
         while not self._stop_event.is_set():
             current_client = self.client
             if not current_client:
-                if not self._stop_event.is_set(): # Avoid error msg during shutdown
+                if not self._stop_event.is_set():
                     print(f"ERROR: Client object for {self.topic_url} is None. Stopping thread.")
                 break
-            try:
-                # Check connection status more carefully
-                is_conn = False
-                try:
-                    is_conn = current_client.is_connected()
-                except Exception:
-                    pass # Assume not connected if check fails
 
-                if not is_conn:
-                    if not self._stop_event.is_set():
-                        print(f"WARNING: Client for {self.topic_url} detected disconnected in loop. Stopping thread.")
-                    break
-            except Exception as e:
-                 # Avoid error msg during shutdown
+            # Check connection status more carefully
+            is_conn = False
+            try:
+                # Check the actual socket connection state if possible (may vary by paho version)
+                # For robustness, rely primarily on is_connected() for now
+                is_conn = current_client.is_connected()
+            except Exception as conn_err:
+                # If checking connection fails, assume disconnected
                  if not self._stop_event.is_set():
-                     print(f"ERROR: Checking connection status failed for {self.topic_url}: {e}. Stopping thread.")
-                 break
+                     print(f"ERROR: Checking connection status failed for {self.topic_url}: {conn_err}. Stopping thread.")
+                 break # Exit if connection check fails
+
+            if not is_conn:
+                if not self._stop_event.is_set():
+                    print(f"WARNING: Client for {self.topic_url} detected disconnected in loop. Stopping thread.")
+                break
 
             try:
                 payload_data = self._generate_payload()
@@ -231,27 +236,42 @@ class Topic(threading.Thread):
                     topic=self.topic_url, payload=payload_json,
                     qos=self.client_settings.qos, retain=retain_message
                 )
-                # msg_info.wait_for_publish(timeout=5.0) # Optional: wait (can block)
+
+                # If using QoS 1 or 2, check if publish succeeded (optional)
+                # if self.client_settings.qos > 0:
+                #    try:
+                #        msg_info.wait_for_publish(timeout=5.0)
+                #    except Exception as pub_e:
+                #        if not self._stop_event.is_set():
+                #             print(f"WARNING: Publish confirmation failed/timed out for {self.topic_url}: {pub_e}")
+                         # Decide whether to break or continue here
+
 
                 self._stop_event.wait(self.client_settings.time_interval)
 
             except Exception as e:
-                # Avoid logging certain errors if stop event is set (e.g., publish fails on disconnect)
                 log_error = True
                 if self._stop_event.is_set():
-                    if isinstance(e, (mqtt.MQTTException, AttributeError, RuntimeError)):
+                    if isinstance(e, (mqtt.MQTTException, AttributeError, RuntimeError, ConnectionError)):
                         log_error = False # Likely due to disconnection during shutdown
 
                 if log_error:
+                    # Print exception type and message for better debugging
                     print(f"ERROR: Unhandled exception in run loop for {self.topic_url}: {type(e).__name__}: {e}")
+                    # Optionally add traceback:
+                    # import traceback
+                    # traceback.print_exc()
                 break # Exit loop on major errors
 
 
         # Cleanup after loop exit
-        # print(f"INFO: Exiting run loop for {self.topic_url}.") # Reduce noise
         self.disconnect()
+    # ================================================================
+    # --- MODIFIED run Method ends here ---
+    # ================================================================
 
-    def _generate_payload(self) -> Optional[Dict]: # Use imported Optional and Dict
+
+    def _generate_payload(self) -> Optional[Dict]:
         """Generates the complete payload dictionary for one message."""
         payload: Dict = {}
         payload.update(self.topic_payload_root)
@@ -269,20 +289,19 @@ class Topic(threading.Thread):
     # --- MQTT Callbacks ---
     def _on_connect(self, client, userdata, flags, rc):
         """Callback when connection attempt completes."""
-        if rc == 0: pass # print(f"INFO: Client for {self.topic_url} connected (rc={rc}).") # Reduce noise
-        else:
+        if rc != 0:
             error_msg = f"Connection failed for {self.topic_url} code {rc}"
             try: error_msg += f" ({mqtt.connack_string(rc)})"
             except ValueError: error_msg += " (Unknown reason)"
             print(f"ERROR: {error_msg}")
-            self._stop_event.set()
+            self._stop_event.set() # Signal stop if connection fails
 
     def _on_disconnect(self, client, userdata, rc):
         """Callback when the client disconnects."""
-        if not self._stop_event.is_set():
-             if rc == 0: pass # print(f"INFO: Client for {self.topic_url} disconnected gracefully by broker.") # Reduce noise
+        if not self._stop_event.is_set(): # Only log if unexpected
+             if rc == 0: pass # Normal disconnect initiated by client or broker?
              else: print(f"WARNING: Unexpected disconnect for {self.topic_url} (rc={rc}).")
-             self._stop_event.set()
+             self._stop_event.set() # Signal stop on unexpected disconnect
 
     def _on_publish(self, client, userdata, mid): pass # Reduce noise
 
