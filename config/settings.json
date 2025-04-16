@@ -6,134 +6,111 @@
     "PROTOCOL_VERSION": "3.1.1",
     "TOPICS": [
         {
-            "TYPE": "multiple",
-            "PREFIX": "lamp",
-            "RANGE_START": 1,
-            "RANGE_END": 2,
-            "TIME_INTERVAL": 4,
+            "TYPE": "list",
+            "PREFIX": "prison/celldoor",
+            "LIST": ["block_a", "block_b"],
+            "TIME_INTERVAL": 5,
             "QOS": 1,
             "DATA": [
                 {
-                    "NAME": "on",
+                    "NAME": "locked",
                     "TYPE": "bool",
-                    "RETAIN_PROBABILITY": 0.85
+                    "RETAIN_PROBABILITY": 0.9
                 },
                 {
-                    "NAME": "temperature",
-                    "TYPE": "int",
-                    "INITIAL_VALUE": 2750,
-                    "MIN_VALUE": 2700,
-                    "MAX_VALUE": 6500,
-                    "MAX_STEP": 250,
-                    "RETAIN_PROBABILITY": 0.3,
-                    "RESET_PROBABILITY": 0.1,
-                    "INCREASE_PROBABILITY": 0.8,
-                    "RESTART_ON_BOUNDARIES": true
+                    "NAME": "alarm_active",
+                    "TYPE": "bool",
+                    "RETAIN_PROBABILITY": 0.2
                 }
             ]
         },
         {
             "TYPE": "single",
-            "PREFIX": "air_quality",
-            "TIME_INTERVAL": 6,
+            "PREFIX": "prison/security/control_room",
+            "TIME_INTERVAL": 7,
             "QOS": 1,
             "DATA": [
                 {
-                    "NAME": "pollution_particles",
-                    "TYPE": "float",
+                    "NAME": "alert_level",
+                    "TYPE": "int",
                     "MIN_VALUE": 0,
-                    "MAX_VALUE": 1,
-                    "MAX_STEP": 0.15,
-                    "RETAIN_PROBABILITY": 0.9
+                    "MAX_VALUE": 5,
+                    "MAX_STEP": 1,
+                    "RETAIN_PROBABILITY": 0.95
                 },
                 {
-                    "NAME": "alert",
+                    "NAME": "lockdown_active",
                     "TYPE": "bool",
-                    "RETAIN_PROBABILITY": 0.9
+                    "RETAIN_PROBABILITY": 0.95
                 }
             ]
         },
         {
             "TYPE": "list",
-            "PREFIX": "temperature",
-            "LIST": ["roof", "basement"],
-            "TIME_INTERVAL": 8,
+            "PREFIX": "prison/environment/temp",
+            "LIST": ["infirmary", "workshop", "main_hall"],
+            "TIME_INTERVAL": 10,
             "QOS": 1,
             "DATA": [
                 {
-                    "NAME": "temperature",
+                    "NAME": "temperature_c",
                     "TYPE": "float",
-                    "MIN_VALUE": 20,
-                    "MAX_VALUE": 55,
-                    "MAX_STEP": 3,
-                    "RETAIN_PROBABILITY": 0.5,
-                    "INCREASE_PROBABILITY": 0.6
+                    "MIN_VALUE": 18.0,
+                    "MAX_VALUE": 28.0,
+                    "MAX_STEP": 1.5,
+                    "RETAIN_PROBABILITY": 0.6,
+                    "INCREASE_PROBABILITY": 0.55
                 }
             ]
         },
         {
             "TYPE": "single",
-            "PREFIX": "freezer",
+            "PREFIX": "prison/power/grid_monitor",
             "TIME_INTERVAL": 6,
             "QOS": 1,
             "DATA": [
                 {
-                    "NAME": "temperature",
+                    "NAME": "voltage_deviation_percent",
                     "TYPE": "math_expression",
-                    "RETAIN_PROBABILITY": 0.1,
-                    "MATH_EXPRESSION": "2*math.pow(x,2)+1",
+                    "RETAIN_PROBABILITY": 0.2,
+                    "MATH_EXPRESSION": "round(math.sin(x * 0.8) * 1.5, 2)",
                     "INTERVAL_START": 0,
-                    "INTERVAL_END": 5,
-                    "MIN_DELTA": 0.3,
-                    "MAX_DELTA": 0.5
+                    "INTERVAL_END": 20,
+                    "MIN_DELTA": 0.4,
+                    "MAX_DELTA": 0.9
                 }
             ]
         },
         {
             "TYPE": "single",
-            "PREFIX": "location",
+            "PREFIX": "prison/guard/patrol_7",
             "TIME_INTERVAL": 5,
             "QOS": 1,
             "PAYLOAD_ROOT": {
-                "user_id": "abc123"
+                "guard_id": "guard_782"
             },
             "DATA": [
                 {
-                    "NAME": "position",
+                    "NAME": "status",
                     "TYPE": "raw_values",
                     "RESTART_ON_END": true,
                     "VALUES": [
-                        "moving",
-                        "stopped"
+                        "patrolling",
+                        "stationary",
+                        "responding_alert",
+                        "on_break"
                     ]
                 },
                 {
-                    "NAME": "coordinate",
+                    "NAME": "location_coord",
                     "TYPE": "raw_values",
-                    "VALUE_DEFAULT": {
-                      "alt": 0
-                    },
                     "RESTART_ON_END": true,
                     "VALUES": [
-                        {
-                            "alt": 0.1,
-                            "lat": -121.883682,
-                            "long": 37.354635
-                        },
-                        {
-                            "lat": -121.883352,
-                            "long": 37.354192
-                        },
-                        {
-                            "alt": 0.15,
-                            "lat": -121.884284,
-                            "long": 37.353757
-                        },
-                        {
-                            "alt": 0.22,
-                            "lat": -121.885227,
-                            "long": 37.353324
-                        }
+                        { "zone": "A", "x": 10, "y": 25 },
+                        { "zone": "Yard", "x": 15, "y": 80 },
+                        { "zone": "Workshop", "x": 60, "y": 75 },
+                        { "zone": "Control", "x": 55, "y": 15 },
+                        { "zone": "Infirmary", "x": 85, "y": 40 }
                     ]
                 }
             ]
