@@ -2,17 +2,8 @@
     "BROKER_URL": "localhost",
     "BROKER_PORT": 1883,
     "BROKER_USERNAME": "iotuser",
-    "BROKER_PASSWORD": "iot",
-    "PROTOCOL_VERSION": "3.1.1",
+    "BROKER_PASSWORD": "iot",  
     "TOPICS": [
-        // {
-        //     "TYPE": "multiple",
-        //     "PREFIX": "lamp",
-        //     "RANGE_START": 1,
-        //     "RANGE_END": 2,
-        //     "TIME_INTERVAL": 4,
-        //     "DATA": [ /* ... lamp data ... */ ]
-        // },
         {
             "TYPE": "single",
             "PREFIX": "air_quality",
@@ -33,13 +24,6 @@
                 }
             ]
         },
-        // {
-        //     "TYPE": "list",
-        //     "PREFIX": "temperature",
-        //     "LIST": ["roof", "basement"],
-        //     "TIME_INTERVAL": 8,
-        //     "DATA": [ /* ... temperature data ... */ ]
-        // },
         {
             "TYPE": "single",
             "PREFIX": "freezer",
