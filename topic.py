@@ -6,7 +6,7 @@ import threading
 import paho.mqtt.client as mqtt
 import random
 import math # Needed for math_expression example
-from typing import Optional, List, Dict # <-- IMPORT ADDED HERE
+from typing import Optional, List, Dict # Import necessary types
 
 # Import your specific data classes
 from data_classes import BrokerSettings, ClientSettings
@@ -310,13 +310,16 @@ class Topic(threading.Thread):
                      print(f"INFO: Disconnecting client for {self.topic_url}...")
                      client_instance.disconnect() # Send DISCONNECT packet
                  else:
-                     print(f"INFO: Client for {self.topic_url} was not connected, stopping loop anyway.")
+                     # Don't log not connected if we didn't initiate disconnect explicitly
+                     if self._stop_event.is_set():
+                         print(f"INFO: Client for {self.topic_url} was already disconnected, stopping loop.")
                      client_instance.loop_stop() # Ensure loop is stopped even if not connected
             except Exception as e:
                  print(f"WARNING: Exception during disconnect for {self.topic_url}: {e}")
             finally:
                  self.client = None # Clear client instance reference in the thread object
-                 if client_was_connected:
+                 # Only log disconnected if we were connected before trying to disconnect
+                 if client_was_connected and self._stop_event.is_set():
                      print(f"INFO: Client for {self.topic_url} disconnected.")
 
 
@@ -329,13 +332,16 @@ class Topic(threading.Thread):
 
         while not self._stop_event.is_set():
             # Check connection status at the start of each loop iteration
-            if not self.client: # If client became None due to disconnect error
-                print(f"ERROR: Client for {self.topic_url} is None. Stopping thread.")
+            current_client = self.client # Use local var in case of race condition with disconnect
+            if not current_client: # If client became None due to disconnect error
+                print(f"ERROR: Client object for {self.topic_url} is None. Stopping thread.")
                 break
             try:
-                if not self.client.is_connected():
-                    print(f"WARNING: Client for {self.topic_url} detected as disconnected in loop. Stopping thread.")
-                    break # Exit loop if connection lost (handled by on_disconnect too, but belt-and-suspenders)
+                if not current_client.is_connected():
+                    # Avoid logging warning if stop was requested
+                    if not self._stop_event.is_set():
+                        print(f"WARNING: Client for {self.topic_url} detected as disconnected in loop. Stopping thread.")
+                    break # Exit loop if connection lost
             except Exception as e:
                  print(f"ERROR: Failed to check connection status for {self.topic_url}: {e}. Stopping thread.")
                  break
@@ -344,7 +350,9 @@ class Topic(threading.Thread):
                 payload_data = self._generate_payload()
 
                 if payload_data is None:
-                    print(f"INFO: No active data to publish for {self.topic_url}. Stopping thread.")
+                    # Only log stop message if not already requested to stop
+                    if not self._stop_event.is_set():
+                         print(f"INFO: No active data to publish for {self.topic_url}. Stopping thread.")
                     break # Exit if no data generated
 
                 payload_json = json.dumps(payload_data, indent=None) # Use compact JSON
@@ -359,8 +367,12 @@ class Topic(threading.Thread):
                             retain_message = True
                             break # One item requesting retain is enough
 
+                # --- ADDED DEBUG LOGGING HERE ---
+                print(f"DEBUG: Publishing to {self.topic_url}: {payload_json} (QoS: {self.client_settings.qos}, Retain: {retain_message})")
+                # --------------------------------
+
                 # Publish the message
-                msg_info = self.client.publish(
+                msg_info = current_client.publish(
                     topic=self.topic_url,
                     payload=payload_json,
                     qos=self.client_settings.qos,
@@ -373,7 +385,8 @@ class Topic(threading.Thread):
                 # except ValueError: # Error if already published?
                 #    pass
                 # except RuntimeError: # Error if disconnected during wait
-                #    print(f"WARNING: Disconnected while waiting for publish confirmation on {self.topic_url}")
+                #    if not self._stop_event.is_set(): # Avoid warning if disconnect was intentional
+                #        print(f"WARNING: Disconnected while waiting for publish confirmation on {self.topic_url}")
                 #    break
 
                 # Wait for the next interval, checking stop event periodically
@@ -385,13 +398,15 @@ class Topic(threading.Thread):
                  # Decide whether to continue or stop on encoding errors
                  time.sleep(self.client_settings.time_interval) # Wait before retry/exit
             except mqtt.MQTTException as e:
-                 print(f"ERROR: MQTT specific error during publish/loop for {self.topic_url}: {e}")
-                 # Often related to connection issues or publishing problems
+                 # Avoid logging error if stop was requested (disconnect might cause publish error)
+                 if not self._stop_event.is_set():
+                     print(f"ERROR: MQTT specific error during publish/loop for {self.topic_url}: {e}")
                  break # Exit loop on MQTT errors
             except AttributeError as e: # Catches potential errors if self.client becomes None unexpectedly
-                if "'NoneType' object has no attribute 'publish'" in str(e) or \
-                   "'NoneType' object has no attribute 'is_connected'" in str(e):
-                    print(f"ERROR: Client object became None unexpectedly for {self.topic_url}. Stopping thread.")
+                if "'NoneType' object" in str(e):
+                     # Avoid logging error if stop was requested
+                     if not self._stop_event.is_set():
+                        print(f"ERROR: Client object became None unexpectedly for {self.topic_url}. Stopping thread.")
                 else:
                     print(f"ERROR: Unexpected AttributeError in run loop for {self.topic_url}: {e}")
                 break # Exit loop
@@ -402,7 +417,8 @@ class Topic(threading.Thread):
 
 
         # Cleanup after loop exit (graceful or error)
-        print(f"INFO: Exiting run loop for {self.topic_url}.")
+        if not self._stop_event.is_set(): # Only log exit if it wasn't requested
+             print(f"INFO: Exiting run loop for {self.topic_url}.")
         self.disconnect() # Ensure client is disconnected cleanly
 
     def _generate_payload(self) -> Optional[Dict]: # Use imported Optional and Dict
@@ -469,20 +485,22 @@ class Topic(threading.Thread):
 
     def _on_disconnect(self, client, userdata, rc):
         """Callback when the client disconnects."""
-        if rc == 0:
-            # Disconnect called by us (or broker graceful shutdown)
-            # This might be logged even during graceful shutdown initiated by stop()
-            pass # Reduce noise, already logged in disconnect()
-            # print(f"INFO: Client for {self.topic_url} disconnected gracefully (rc=0).")
-        else:
-            print(f"WARNING: Unexpected disconnection for {self.topic_url} (rc={rc}). Check network or broker logs.")
-            # Signal the thread to stop on unexpected disconnects
-            self._stop_event.set()
+        # Avoid logging if disconnect was requested via stop event
+        if not self._stop_event.is_set():
+             if rc == 0:
+                 # Should not happen unless broker initiated graceful disconnect?
+                 print(f"INFO: Client for {self.topic_url} disconnected gracefully by broker (rc=0).")
+             else:
+                 print(f"WARNING: Unexpected disconnection for {self.topic_url} (rc={rc}). Check network or broker logs.")
+             # Signal the thread to stop on unexpected disconnects
+             self._stop_event.set()
+        # else: Already handled by disconnect() logic
+
 
     def _on_publish(self, client, userdata, mid):
         """Callback when a message is successfully published (for QoS > 0)."""
         # Keep this minimal to avoid console spam
-        # print(f'DEBUG: MID {mid} published on {self.topic_url}')
+        # print(f'TRACE: MID {mid} published on {self.topic_url}')
         pass
 
 # --- END OF FILE topic.py ---
