@@ -1,11 +1,9 @@
-// --- START OF FILE config/settings.json ---
-
 {
-    "BROKER_URL": "localhost", // <-- CHANGE to your broker's IP or hostname
+    "BROKER_URL": "localhost",                // <-- CHANGE THIS
     "BROKER_PORT": 1883,
-    "BROKER_USERNAME": "iotuser",       // <-- ADD YOUR Mosquitto USERNAME
-    "BROKER_PASSWORD": "iot", // <-- ADD YOUR Mosquitto PASSWORD
-    "PROTOCOL_VERSION": "3.1.1", // Optional: Can be "5", "3.1.1" or "3.1". Default "3.1.1"
+    "BROKER_USERNAME": "iotuser",           // <-- CHANGE THIS
+    "BROKER_PASSWORD": "iot",    // <-- CHANGE THIS
+    "PROTOCOL_VERSION": "3.1.1",
     "TOPICS": [
         {
             "TYPE": "multiple",
@@ -137,4 +135,3 @@
         }
     ]
 }
-// --- END OF FILE config/settings.json ---
