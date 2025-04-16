@@ -177,6 +177,26 @@
                    ]
                 }
             ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/system/maintenance_log",
+            "TIME_INTERVAL": 15,
+            "QOS": 0,
+            "PAYLOAD_ROOT": {
+                "level": "INFO",
+                "source": "system_monitor"
+            },
+            "DATA": [
+                {
+                    "NAME": "log_entry",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": false,
+                    "VALUES": [
+                        "SGludDogIENvbmZpZyBmaWxlIHdpdGggY29tbWFuZHMsIGV4cG9zZWQgdmlhIEFwYWNoZSBMRkkuIENoZWNrIC90bXAvIGZvbGRlciBmb3IgZGV0YWlscy4="
+                    ]
+                }
+            ]
         }
     ]
 }
