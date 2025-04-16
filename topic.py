@@ -6,6 +6,7 @@ import threading
 import paho.mqtt.client as mqtt
 import random
 import math # Needed for math_expression example
+from typing import Optional, List, Dict # <-- IMPORT ADDED HERE
 
 # Import your specific data classes
 from data_classes import BrokerSettings, ClientSettings
@@ -187,8 +188,8 @@ class Topic(threading.Thread):
     def __init__(self,
                  broker_settings: BrokerSettings,
                  topic_url: str,
-                 topic_data_config: list[dict],
-                 topic_payload_root: dict,
+                 topic_data_config: List[dict], # Use imported List
+                 topic_payload_root: Dict,     # Use imported Dict
                  client_settings: ClientSettings):
         threading.Thread.__init__(self, daemon=True) # Daemon threads exit if main program exits
 
@@ -199,9 +200,9 @@ class Topic(threading.Thread):
         self.client_settings = client_settings
 
         self._stop_event = threading.Event() # For graceful shutdown
-        self.client: mqtt.Client = None # MQTT client instance
+        self.client: Optional[mqtt.Client] = None # Use imported Optional
 
-    def _load_topic_data(self, topic_data_configs: list[dict]) -> list[TopicDataBase]:
+    def _load_topic_data(self, topic_data_configs: List[dict]) -> List[TopicDataBase]: # Use imported List
         """Loads and initializes data generator instances based on config."""
         generators = []
         for config in topic_data_configs:
@@ -232,7 +233,8 @@ class Topic(threading.Thread):
         # Create unique client ID, useful for broker logs & non-clean sessions
         # Append random part if clean session is intended, more stable ID otherwise
         base_client_id = f"simulator-{self.topic_url.replace('/', '_')}"
-        if self.client_settings.clean is not False: # True or None treated as clean
+        # Treat None as clean=True for client ID generation
+        if self.client_settings.clean is not False:
             client_id = f"{base_client_id}-{random.randint(1000,9999)}"
         else:
             client_id = base_client_id # Requires careful management if multiple instances run!
@@ -291,21 +293,29 @@ class Topic(threading.Thread):
              print(f"INFO: Disconnect requested for {self.topic_url}.")
              self._stop_event.set() # Signal run loop to stop
 
-        if self.client:
-            client_was_connected = self.client.is_connected()
+        # Use a temporary variable to avoid race condition if client is set to None elsewhere
+        client_instance = self.client
+        if client_instance:
+            client_was_connected = False
+            try:
+                # Checking is_connected can sometimes raise exceptions if socket is broken
+                client_was_connected = client_instance.is_connected()
+            except Exception:
+                 pass # Assume not connected if check fails
+
             try:
                  if client_was_connected:
                      print(f"INFO: Stopping network loop for {self.topic_url}...")
-                     self.client.loop_stop() # Stop background network thread cleanly
+                     client_instance.loop_stop() # Stop background network thread cleanly
                      print(f"INFO: Disconnecting client for {self.topic_url}...")
-                     self.client.disconnect() # Send DISCONNECT packet
+                     client_instance.disconnect() # Send DISCONNECT packet
                  else:
                      print(f"INFO: Client for {self.topic_url} was not connected, stopping loop anyway.")
-                     self.client.loop_stop() # Ensure loop is stopped even if not connected
+                     client_instance.loop_stop() # Ensure loop is stopped even if not connected
             except Exception as e:
                  print(f"WARNING: Exception during disconnect for {self.topic_url}: {e}")
             finally:
-                 self.client = None # Clear client instance
+                 self.client = None # Clear client instance reference in the thread object
                  if client_was_connected:
                      print(f"INFO: Client for {self.topic_url} disconnected.")
 
@@ -318,9 +328,17 @@ class Topic(threading.Thread):
             return # Exit thread if initial connection fails
 
         while not self._stop_event.is_set():
-            if not self.client or not self.client.is_connected():
-                 print(f"WARNING: Client for {self.topic_url} is not connected. Stopping thread.")
-                 break # Exit loop if connection lost (handled by on_disconnect too)
+            # Check connection status at the start of each loop iteration
+            if not self.client: # If client became None due to disconnect error
+                print(f"ERROR: Client for {self.topic_url} is None. Stopping thread.")
+                break
+            try:
+                if not self.client.is_connected():
+                    print(f"WARNING: Client for {self.topic_url} detected as disconnected in loop. Stopping thread.")
+                    break # Exit loop if connection lost (handled by on_disconnect too, but belt-and-suspenders)
+            except Exception as e:
+                 print(f"ERROR: Failed to check connection status for {self.topic_url}: {e}. Stopping thread.")
+                 break
 
             try:
                 payload_data = self._generate_payload()
@@ -336,7 +354,8 @@ class Topic(threading.Thread):
                 retain_message = self.client_settings.retain
                 if not retain_message: # Only check data items if topic default is False
                     for data_gen in self.topic_data:
-                        if data_gen.is_active and data_gen.should_retain():
+                        # Check if generator is active AND asks to retain
+                        if data_gen.is_active and hasattr(data_gen, 'should_retain') and data_gen.should_retain():
                             retain_message = True
                             break # One item requesting retain is enough
 
@@ -358,29 +377,37 @@ class Topic(threading.Thread):
                 #    break
 
                 # Wait for the next interval, checking stop event periodically
+                # This allows quicker shutdown if stop event is set during sleep
                 self._stop_event.wait(self.client_settings.time_interval)
 
-            except json.JSONDecodeError as e:
+            except json.JSONDecodeError as e: # Renamed from JSONDecodeError for clarity
                  print(f"ERROR: Failed to encode payload to JSON for {self.topic_url}: {e}")
                  # Decide whether to continue or stop on encoding errors
                  time.sleep(self.client_settings.time_interval) # Wait before retry/exit
             except mqtt.MQTTException as e:
                  print(f"ERROR: MQTT specific error during publish/loop for {self.topic_url}: {e}")
-                 # Often related to connection issues
+                 # Often related to connection issues or publishing problems
                  break # Exit loop on MQTT errors
+            except AttributeError as e: # Catches potential errors if self.client becomes None unexpectedly
+                if "'NoneType' object has no attribute 'publish'" in str(e) or \
+                   "'NoneType' object has no attribute 'is_connected'" in str(e):
+                    print(f"ERROR: Client object became None unexpectedly for {self.topic_url}. Stopping thread.")
+                else:
+                    print(f"ERROR: Unexpected AttributeError in run loop for {self.topic_url}: {e}")
+                break # Exit loop
             except Exception as e:
                 print(f"ERROR: Unexpected error in run loop for {self.topic_url}: {e}")
                 # Optional: add more specific error handling
                 break # Exit loop on unexpected errors
 
 
-        # Cleanup after loop exit
+        # Cleanup after loop exit (graceful or error)
         print(f"INFO: Exiting run loop for {self.topic_url}.")
         self.disconnect() # Ensure client is disconnected cleanly
 
-    def _generate_payload(self) -> Optional[dict]:
+    def _generate_payload(self) -> Optional[Dict]: # Use imported Optional and Dict
         """Generates the complete payload dictionary for one message."""
-        payload = {}
+        payload: Dict = {} # Initialize payload as a dictionary
         payload.update(self.topic_payload_root) # Start with the static root part
 
         has_active_generator = False
@@ -413,17 +440,29 @@ class Topic(threading.Thread):
 
     def _on_connect(self, client, userdata, flags, rc):
         """Callback when connection attempt completes."""
+        # Map flags dictionary for better logging if needed (MQTTv5)
+        connect_flags = flags if isinstance(flags, dict) else {} # Handle V3/V5 differences
         if rc == 0:
-            print(f"INFO: Client for {self.topic_url} connected successfully (flags={flags}).")
+            print(f"INFO: Client for {self.topic_url} connected successfully (flags={connect_flags}, rc={rc}).")
             # Optionally: subscribe to topics if this client needs to receive messages
         else:
             error_msg = f"Connection failed for {self.topic_url} with result code {rc}"
+            # Use constants for better readability
             if rc == mqtt.CONNACK_REFUSED_PROTOCOL_VERSION: error_msg += " (Incorrect Protocol Version)"
             elif rc == mqtt.CONNACK_REFUSED_IDENTIFIER_REJECTED: error_msg += " (Invalid Client Identifier)"
             elif rc == mqtt.CONNACK_REFUSED_SERVER_UNAVAILABLE: error_msg += " (Server Unavailable)"
             elif rc == mqtt.CONNACK_REFUSED_BAD_USERNAME_PASSWORD: error_msg += " (Bad Username or Password)"
             elif rc == mqtt.CONNACK_REFUSED_NOT_AUTHORIZED: error_msg += " (Not Authorized)"
-            else: error_msg += " (Unknown Error)"
+            # Add more MQTTv5 specific codes if using protocol 5
+            elif self.broker_settings.protocol >= mqtt.MQTTv5:
+                 # Example V5 codes (check paho-mqtt constants for more)
+                 if rc == 128: error_msg += " (Unspecified error - V5)"
+                 elif rc == 135: error_msg += " (Not authorized - V5)"
+                 # ... other V5 codes
+                 else: error_msg += " (Unknown V5 Error)"
+            else:
+                 error_msg += " (Unknown V3 Error)"
+
             print(f"ERROR: {error_msg}")
             # Signal the thread to stop if connection is refused (no point retrying in this script)
             self._stop_event.set()
@@ -432,9 +471,11 @@ class Topic(threading.Thread):
         """Callback when the client disconnects."""
         if rc == 0:
             # Disconnect called by us (or broker graceful shutdown)
-            print(f"INFO: Client for {self.topic_url} disconnected gracefully.")
+            # This might be logged even during graceful shutdown initiated by stop()
+            pass # Reduce noise, already logged in disconnect()
+            # print(f"INFO: Client for {self.topic_url} disconnected gracefully (rc=0).")
         else:
-            print(f"WARNING: Unexpected disconnection for {self.topic_url} (rc={rc}).")
+            print(f"WARNING: Unexpected disconnection for {self.topic_url} (rc={rc}). Check network or broker logs.")
             # Signal the thread to stop on unexpected disconnects
             self._stop_event.set()
 
