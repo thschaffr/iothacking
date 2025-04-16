@@ -1,8 +1,8 @@
 {
-    "BROKER_URL": "localhost",                // <-- CHANGE THIS
+    "BROKER_URL": "localhost",              
     "BROKER_PORT": 1883,
-    "BROKER_USERNAME": "iotuser",           // <-- CHANGE THIS
-    "BROKER_PASSWORD": "iot",    // <-- CHANGE THIS
+    "BROKER_USERNAME": "iotuser",           
+    "BROKER_PASSWORD": "iot",    
     "PROTOCOL_VERSION": "3.1.1",
     "TOPICS": [
         {
