@@ -2,7 +2,7 @@
     "BROKER_URL": "localhost",
     "BROKER_PORT": 1883,
     "BROKER_USERNAME": "iotuser",
-    "BROKER_PASSWORD": "iot",   низкойMake sure this is your actual password
+    "BROKER_PASSWORD": "iot", 
     "PROTOCOL_VERSION": "3.1.1",
     "TOPICS": [
         {
