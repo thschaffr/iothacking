@@ -1,7 +1,7 @@
 # --- START OF FILE simulator.py ---
 
 import json
-import time
+import time # <-- ADD THIS IMPORT AT THE TOP
 import paho.mqtt.client as mqtt # Import for protocol constants
 from pathlib import Path
 
@@ -132,62 +132,96 @@ class Simulator:
 
         self.topics = loaded_topics
 
-
+    # ================================================================
+    # --- MODIFIED run Method starts here ---
+    # ================================================================
     def run(self):
-        """Starts all configured topic threads and waits for them to complete or interruption."""
+        """Starts all configured topic threads with a delay and waits."""
         if not self.topics:
             print("ERROR: No topics loaded to run. Exiting.")
             return
 
-        print(f"INFO: Starting {len(self.topics)} topic thread(s)...")
-        for topic in self.topics:
+        print(f"INFO: Starting {len(self.topics)} topic thread(s) with delays...")
+        for i, topic in enumerate(self.topics):
             print(f" -> Starting: {topic.topic_url}")
             topic.start()
+            # --- ADDED DELAY ---
+            # Introduce a small pause between starting each thread
+            # to reduce the chance of resource contention or race conditions
+            # during initial connection flood. Adjust delay if needed (e.g., 0.2 or 1.0)
+            time.sleep(0.5)
+            # -------------------
 
         print("INFO: All topic threads started. Simulator running. Press Ctrl+C to stop.")
 
         # Keep main thread alive while topic threads are running
         try:
+            # Check periodically if any threads are still alive
             while any(t.is_alive() for t in self.topics):
-                # Sleep for a short duration to avoid busy-waiting
-                time.sleep(0.5)
-                # Optional: Add checks here for overall health or external stop commands
+                time.sleep(0.5) # Check every half second
         except KeyboardInterrupt:
             print("\nINFO: KeyboardInterrupt received. Stopping simulator...")
-            self.stop()
+            # self.stop() will be called in the finally block
         except Exception as e:
              print(f"\nERROR: Unexpected error in main simulator loop: {e}")
-             self.stop() # Attempt graceful shutdown on error
+             # self.stop() will be called in the finally block
         finally:
-            # Ensure cleanup happens even if loop exits unexpectedly
-            if any(t.is_alive() for t in self.topics):
-                 print("INFO: Some threads still alive after main loop exit. Attempting final stop.")
-                 self.stop()
+            # Ensure graceful shutdown is attempted regardless of how the loop exited
+            print("INFO: Main loop exited. Initiating shutdown sequence...")
+            self.stop()
             print("INFO: Simulator main loop finished.")
-
+    # ================================================================
+    # --- MODIFIED run Method ends here ---
+    # ================================================================
 
     def stop(self):
         """Requests all running topic threads to stop and waits for them."""
         print(f"INFO: Stopping {len(self.topics)} topic thread(s)...")
         # Request all threads to stop first
-        for topic in self.topics:
-            if topic.is_alive():
-                print(f" -> Requesting stop: {topic.topic_url}")
-                topic.disconnect() # disconnect() now signals the stop event
+        active_topics = [t for t in self.topics if t.is_alive()]
+        if not active_topics:
+            print("INFO: No active threads to stop.")
+            #return # Keep going to print final message
+
+        for topic in active_topics:
+            print(f" -> Requesting stop: {topic.topic_url}")
+            topic.disconnect() # disconnect() now signals the stop event and handles client disconnect
 
         # Wait for threads to actually finish
         print("INFO: Waiting for threads to terminate...")
         start_time = time.time()
         shutdown_timeout = 10 # seconds
 
-        for topic in self.topics:
-            if topic.is_alive():
-                join_timeout = max(0.1, shutdown_timeout - (time.time() - start_time))
-                topic.join(timeout=join_timeout)
-                if topic.is_alive():
-                    print(f"WARNING: Thread for {topic.topic_url} did not stop gracefully within timeout.")
-                # else: # Optional: Log successful join
-                #    print(f" -> Thread stopped: {topic.topic_url}")
+        # Create a list of threads we are waiting for
+        threads_to_join = [t for t in self.topics if t.is_alive()]
+
+        while threads_to_join:
+             # Calculate remaining time
+             elapsed_time = time.time() - start_time
+             remaining_time = shutdown_timeout - elapsed_time
+             if remaining_time <= 0:
+                 print("WARNING: Shutdown timeout reached.")
+                 break # Stop waiting
+
+             # Join the first thread in the list with the remaining timeout
+             thread = threads_to_join[0]
+             thread.join(timeout=max(0.1, remaining_time)) # Ensure timeout is positive
+
+             if thread.is_alive():
+                 # If timeout reached for this thread, move on (it might be stuck)
+                 print(f"WARNING: Thread for {thread.topic_url} did not stop gracefully within timeout.")
+                 threads_to_join.pop(0) # Remove it from list to avoid infinite loop
+             else:
+                 # Thread finished, remove it and continue waiting for others
+                 threads_to_join.pop(0)
+
+
+        # Final check
+        remaining_alive = [t.topic_url for t in self.topics if t.is_alive()]
+        if remaining_alive:
+             print(f"WARNING: The following threads may still be running: {remaining_alive}")
+        else:
+            print("INFO: All monitored threads have terminated.")
 
         print("INFO: Simulator stop sequence complete.")
 
