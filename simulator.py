@@ -30,7 +30,7 @@ class Simulator:
             "prison/guard/patrol_7"
         ]
         self.trigger_command = "GET_FLAG"
-        self.flag_response = "{{SECURITY-DISARMED}}"
+        self.flag_response = "{{ALCATRAZ4tWIN}}"
         self.flag_response_topic = "prison/system/flag_channel"
         # --------------------------------------------------------------------
 
