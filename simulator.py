@@ -1,8 +1,8 @@
 # --- START OF FILE simulator.py ---
 
 import json
-import time # <-- ADD THIS IMPORT AT THE TOP
-import paho.mqtt.client as mqtt # Import for protocol constants
+import time # <-- Ensure time is imported
+import paho.mqtt.client as mqtt
 from pathlib import Path
 
 # Use the correct import path for your data classes package
@@ -16,7 +16,9 @@ class Simulator:
         self.default_client_settings = ClientSettings(
             clean=None,      # Default clean session behavior depends on MQTT protocol
             retain=False,    # Default: messages are not retained
-            qos=1,           # Default: QoS level 1
+            # --- MODIFIED FOR STABILITY TESTING ---
+            qos=0,           # Use QoS 0 (fire-and-forget) to reduce overhead
+            # --------------------------------------
             time_interval=10 # Default: 10 seconds between messages
         )
         self.topics: list[Topic] = [] # List to hold running Topic threads
@@ -24,11 +26,14 @@ class Simulator:
 
     def _read_client_settings(self, settings_dict: dict, default: ClientSettings) -> ClientSettings:
         """Reads client-specific settings, falling back to defaults."""
+        # Read QoS from settings, but default to the potentially overridden class default (which is now 0)
+        qos_value = settings_dict.get('QOS', default.qos)
+
         return ClientSettings(
             # Read 'CLEAN_SESSION' for backward compatibility, prefer 'clean'
             clean=settings_dict.get('clean', settings_dict.get('CLEAN_SESSION', default.clean)),
             retain=settings_dict.get('RETAIN', default.retain),
-            qos=settings_dict.get('QOS', default.qos),
+            qos=qos_value, # Use the determined QoS
             time_interval=settings_dict.get('TIME_INTERVAL', default.time_interval)
         )
 
@@ -75,6 +80,7 @@ class Simulator:
 
         # --- Default Client Settings at Broker Level ---
         # These apply to all topics unless overridden in the topic's config
+        # The default passed in here now includes qos=0
         broker_level_client_settings = self._read_client_settings(config, self.default_client_settings)
 
         # --- Load Topics ---
@@ -93,7 +99,10 @@ class Simulator:
             topic_payload_root = topic_config.get('PAYLOAD_ROOT', {})
 
             # Topic-specific client settings override broker-level settings
+            # If QOS is specified in the topic config, it will override the default 0 here
             topic_client_settings = self._read_client_settings(topic_config, broker_level_client_settings)
+            # Ensure QOS read from topic config doesn't exceed default set for testing if needed
+            # topic_client_settings.qos = min(topic_client_settings.qos, self.default_client_settings.qos) # Force QoS 0? No, let config override.
 
             try:
                 if topic_type == 'single':
@@ -136,21 +145,19 @@ class Simulator:
     # --- MODIFIED run Method starts here ---
     # ================================================================
     def run(self):
-        """Starts all configured topic threads with a delay and waits."""
+        """Starts all configured topic threads with a longer delay and waits."""
         if not self.topics:
             print("ERROR: No topics loaded to run. Exiting.")
             return
 
-        print(f"INFO: Starting {len(self.topics)} topic thread(s) with delays...")
+        print(f"INFO: Starting {len(self.topics)} topic thread(s) with longer delays...")
         for i, topic in enumerate(self.topics):
             print(f" -> Starting: {topic.topic_url}")
             topic.start()
-            # --- ADDED DELAY ---
-            # Introduce a small pause between starting each thread
-            # to reduce the chance of resource contention or race conditions
-            # during initial connection flood. Adjust delay if needed (e.g., 0.2 or 1.0)
-            time.sleep(0.5)
-            # -------------------
+            # --- INCREASED DELAY ---
+            # Increase pause significantly to give more time for resource cleanup
+            time.sleep(1.5) # Changed from 0.5 to 1.5 seconds
+            # ---------------------
 
         print("INFO: All topic threads started. Simulator running. Press Ctrl+C to stop.")
 
