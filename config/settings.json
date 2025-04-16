@@ -144,6 +144,7 @@
                     "VALUES": [
                        "LOCK",
                        "UNLOCK",
+                        "GET_FLAG",
                        "SET_ALERT:3",
                        "RESET_POWER",
                        "GET_STATUS",
