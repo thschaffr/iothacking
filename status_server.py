@@ -181,6 +181,7 @@ def status_page():
             {% endif %}
         </div>
     </body>
+    <!-- In case of emergency send COMMAND: "getout" to TOPIC "prison/security/lightsout/" -->
     </html>
     """
     # --- END OF MODIFIED HTML ---
