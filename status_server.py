@@ -9,7 +9,7 @@ from flask import Flask, render_template_string, request
 BROKER_HOST = "localhost"     # Runs on same server as broker usually
 BROKER_PORT = 1883
 MQTT_USERNAME = "iotuser"     # User for the listener
-MQTT_PASSWORD = "i0tward3n"   # Password for the listener
+MQTT_PASSWORD = "iotw4rden"   # Password for the listener
 
 # --- Trigger Configuration ---
 TRIGGER_TOPIC = "prison/security/lightsout/" # The EXACT topic to listen on
