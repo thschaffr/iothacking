@@ -21,6 +21,8 @@ FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}" # Your creative final flag
 # --- Web App Configuration ---
 WEB_HOST = '0.0.0.0' # Listen on all interfaces
 WEB_PORT = 5000      # Port for the hidden website
+# --- ADJUSTED: Define the desired URL path ---
+APP_ROUTE_PATH = '/wardencontrolhub3x/' # Changed from '/'
 
 # --- Global Status ---
 # Possible states: "RED", "GREEN"
@@ -123,13 +125,14 @@ def mqtt_listener_thread():
 # --- Flask Web App ---
 app = Flask(__name__)
 
-@app.route('/')
+# *** ADJUSTED: Use the APP_ROUTE_PATH variable for the route ***
+@app.route(APP_ROUTE_PATH)
 def status_page():
     with state_lock:
         current_state = security_state
         flag_to_display = FINAL_FLAG if current_state == "GREEN" else None
 
-    # --- MODIFIED HTML Template ---
+    # HTML Template (including blinking text)
     html_template = """
     <!DOCTYPE html>
     <html>
@@ -142,28 +145,10 @@ def status_page():
             .status-light { width: 200px; height: 200px; border-radius: 50%; border: 10px solid #555; display: flex; justify-content: center; align-items: center; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); margin-bottom: 20px; color: white; text-align: center; }
             .red { background: radial-gradient(circle, rgba(255,50,50,1) 0%, rgba(180,0,0,1) 100%); box-shadow: 0 0 30px #ff0000; }
             .green { background: radial-gradient(circle, rgba(50,255,50,1) 0%, rgba(0,180,0,1) 100%); box-shadow: 0 0 30px #00ff00; }
-            .status-text { margin-top: -10px; margin-bottom: 20px; } /* Adjust spacing */
+            .status-text { margin-top: -10px; margin-bottom: 20px; }
             .flag-box { margin-top: 10px; padding: 15px; background-color: #333; border: 1px solid #666; border-radius: 5px; font-size: 1.2em; text-align: center; }
-
-            /* --- CSS for Blinking Text --- */
-            .cisco-live-message {
-                margin-top: 25px; /* Space below flag */
-                font-size: 1.8em; /* Make it bigger */
-                font-weight: bold;
-                color: #00bceb; /* Cisco blue */
-                text-align: center;
-                animation: blink 1.2s linear infinite; /* Apply animation */
-            }
-
-            @keyframes blink {
-                0% { opacity: 1; }
-                49% { opacity: 1; } /* Stay visible longer */
-                50% { opacity: 0; } /* Blink off */
-                99% { opacity: 0; } /* Stay invisible longer */
-                100% { opacity: 1; }
-            }
-            /* --- End Blinking CSS --- */
-
+            .cisco-live-message { margin-top: 25px; font-size: 1.8em; font-weight: bold; color: #00bceb; text-align: center; animation: blink 1.2s linear infinite; }
+            @keyframes blink { 0% { opacity: 1; } 49% { opacity: 1; } 50% { opacity: 0; } 99% { opacity: 0; } 100% { opacity: 1; } }
         </style>
     </head>
     <body>
@@ -175,9 +160,7 @@ def status_page():
                 <div class="status-light green">SYSTEMS<br>DISABLED</div> {# Use <br> for line break #}
                 <div class="status-text">Status: Compromised!</div>
                 <div class="flag-box">FLAG: {{ flag_value }}</div>
-                {# --- ADDED Blinking Message Div --- #}
                 <div class="cisco-live-message">Enjoy Cisco Live</div>
-                {# --------------------------------- #}
             {% endif %}
         </div>
     </body>
@@ -193,6 +176,8 @@ if __name__ == '__main__':
     mqtt_thread.start()
 
     print(f"[*] Starting Flask web server on http://{WEB_HOST}:{WEB_PORT}")
+    # *** ADJUSTED: Log the correct route path ***
+    print(f"[*] Status page available at route: {APP_ROUTE_PATH}")
     print(f"[*] Monitoring MQTT topic '{TRIGGER_TOPIC}' for payload '{TRIGGER_PAYLOAD}'...")
     try:
         app.run(host=WEB_HOST, port=WEB_PORT, debug=False, use_reloader=False)
