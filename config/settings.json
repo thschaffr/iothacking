@@ -192,7 +192,7 @@
                 {
                     "NAME": "log_entry",
                     "TYPE": "raw_values",
-                    "RESTART_ON_END": false,
+                    "RESTART_ON_END": true,
                     "VALUES": [
                         "SGludDogIENvbmZpZyBmaWxlIHdpdGggY29tbWFuZHMsIGV4cG9zZWQgdmlhIEFwYWNoZSBMRkkuIENoZWNrIC90bXAvIGZvbGRlciBmb3IgZGV0YWlscy4="
                     ]
