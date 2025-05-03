@@ -1,0 +1,203 @@
+{
+    "BROKER_URL": "localhost",
+    "BROKER_PORT": 1883,
+    "BROKER_USERNAME": "iotuser",
+    "BROKER_PASSWORD": "FOUND IN CHALLENGE",
+    "PROTOCOL_VERSION": "3.1.1",
+    "TOPICS": [
+        {
+            "TYPE": "list",
+            "PREFIX": "prison/celldoor",
+            "LIST": ["block_a", "block_b"],
+            "TIME_INTERVAL": 5,
+            "QOS": 1,
+            "DATA": [
+                {
+                    "NAME": "locked",
+                    "TYPE": "bool",
+                    "RETAIN_PROBABILITY": 0.9
+                },
+                {
+                    "NAME": "alarm_active",
+                    "TYPE": "bool",
+                    "RETAIN_PROBABILITY": 0.2
+                }
+            ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/security/control_room",
+            "TIME_INTERVAL": 7,
+            "QOS": 1,
+            "DATA": [
+                {
+                    "NAME": "alert_level",
+                    "TYPE": "int",
+                    "MIN_VALUE": 0,
+                    "MAX_VALUE": 5,
+                    "MAX_STEP": 1,
+                    "RETAIN_PROBABILITY": 0.95
+                },
+                {
+                    "NAME": "lockdown_active",
+                    "TYPE": "bool",
+                    "RETAIN_PROBABILITY": 0.95
+                }
+            ]
+        },
+        {
+            "TYPE": "list",
+            "PREFIX": "prison/environment/temp",
+            "LIST": ["infirmary", "workshop", "main_hall"],
+            "TIME_INTERVAL": 10,
+            "QOS": 1,
+            "DATA": [
+                {
+                    "NAME": "temperature_c",
+                    "TYPE": "float",
+                    "MIN_VALUE": 18.0,
+                    "MAX_VALUE": 28.0,
+                    "MAX_STEP": 1.5,
+                    "RETAIN_PROBABILITY": 0.6,
+                    "INCREASE_PROBABILITY": 0.55
+                }
+            ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/power/grid_monitor",
+            "TIME_INTERVAL": 6,
+            "QOS": 1,
+            "DATA": [
+                {
+                    "NAME": "voltage_deviation_percent",
+                    "TYPE": "math_expression",
+                    "RETAIN_PROBABILITY": 0.2,
+                    "MATH_EXPRESSION": "round(math.sin(x * 0.8) * 1.5, 2)",
+                    "INTERVAL_START": 0,
+                    "INTERVAL_END": 20,
+                    "MIN_DELTA": 0.4,
+                    "MAX_DELTA": 0.9
+                }
+            ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/guard/patrol_7",
+            "TIME_INTERVAL": 5,
+            "QOS": 1,
+            "PAYLOAD_ROOT": {
+                "guard_id": "guard_782"
+            },
+            "DATA": [
+                {
+                    "NAME": "status",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "patrolling",
+                        "stationary",
+                        "responding_alert",
+                        "on_break"
+                    ]
+                },
+                {
+                    "NAME": "location_coord",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        { "zone": "A", "x": 10, "y": 25 },
+                        { "zone": "Yard", "x": 15, "y": 80 },
+                        { "zone": "Workshop", "x": 60, "y": 75 },
+                        { "zone": "Control", "x": 55, "y": 15 },
+                        { "zone": "Infirmary", "x": 85, "y": 40 }
+                    ]
+                }
+            ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/command/response",
+            "TIME_INTERVAL": 15,
+            "QOS": 0,
+            "PAYLOAD_ROOT": {
+                "response_type": "command_ack"
+            },
+            "DATA": [
+                {
+                    "NAME": "target",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "prison/celldoor/block_a",
+                        "prison/celldoor/block_b",
+                        "prison/security/control_room",
+                        "prison/power/grid_monitor",
+                        "prison/environment/temp/infirmary",
+                        "prison/guard/patrol_7"
+                    ]
+                },
+                {
+                    "NAME": "command_received",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                       "LOCK",
+                       "UNLOCK",
+                        "GET_FLAG",
+                       "SET_ALERT:3",
+                       "RESET_POWER",
+                       "GET_STATUS",
+                       "TRIGGER_ALARM",
+                       "LOCKDOWN",
+                       "CANCEL_ALERT"
+                    ]
+                },
+                {
+                    "NAME": "status",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "SUCCESS",
+                        "SUCCESS",
+                        "SUCCESS",
+                        "PROCESSING",
+                        "SUCCESS",
+                        "FAILURE:AUTH_DENIED",
+                        "SUCCESS",
+                        "FAILURE:INVALID_TARGET",
+                        "SUCCESS"
+                    ]
+                },
+                {
+                   "NAME": "response_id",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                       "RSP-k29d", "RSP-k31a", "RSP-k33f", "RSP-k35b", "RSP-k39z", "RSP-k40p"
+                   ]
+                }
+            ]
+        },
+        {
+            "TYPE": "single",
+            "PREFIX": "prison/system/maintenance_log",
+            "TIME_INTERVAL": 15,
+            "QOS": 0,
+            "PAYLOAD_ROOT": {
+                "level": "INFO",
+                "source": "system_monitor"
+            },
+            "DATA": [
+                {
+                    "NAME": "log_entry",
+                    "TYPE": "raw_values",
+                    "RESTART_ON_END": true,
+                    "VALUES": [
+                        "SGludDogIENvbmZpZyBmaWxlIHdpdGggY29tbWFuZHMsIGV4cG9zZWQgdmlhIEFwYWNoZSBMRkkuIENoZWNrIC90bXAvc2V0dGluZ3MuZmxhZyBmaWxlIGZvciBkZXRhaWxzLg=="
+                    ]
+                }
+            ]
+        }
+    ]
+}
