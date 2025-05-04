@@ -16,7 +16,7 @@ TRIGGER_TOPIC = "prison/security/lightsout/" # The EXACT topic to listen on
 TRIGGER_PAYLOAD = "getout"                 # The EXACT payload to trigger success
 
 # --- CTF Flag ---
-FINAL_FLAG = "FLAG{LIGHTS_OUT_AND_IM_GONE}" # Your creative final flag
+FINAL_FLAG = "{{LIGHTS_OUT_AND_IM_GONE}}" # Revealed flag
 
 # --- Web App Configuration ---
 WEB_HOST = '0.0.0.0' # Listen on all interfaces
