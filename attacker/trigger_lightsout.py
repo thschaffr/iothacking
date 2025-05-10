@@ -8,14 +8,14 @@ import sys
 # IMPORTANT: You MUST replace the placeholder values below
 #            with the information found in the prison systems!
 TARGET_TOPIC = "prison/security/lightsout/"  # EDIT THIS: The specific topic to publish to.
-COMMAND_PAYLOAD = "getout"          # EDIT THIS: The specific command phrase.
+COMMAND_PAYLOAD = "getout"                   # EDIT THIS: The specific command phrase.
 # ---------------------------
 
 # --- MQTT Configuration (Should match the CTF setup) ---
 BROKER_HOST = "198.18.128.11" # IP of the Mosquitto broker
 BROKER_PORT = 1883
-MQTT_USERNAME = "iotuser"     # Username for MQTT
-MQTT_PASSWORD = "iot"         # Password for MQTT
+MQTT_USERNAME = "iotuser"           # Username for MQTT
+MQTT_PASSWORD = "iotw4rden"         # Password for MQTT
 
 # --- MQTT Callbacks ---
 # Corrected on_connect signature
