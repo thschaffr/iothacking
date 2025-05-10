@@ -15,7 +15,7 @@ COMMAND_PAYLOAD = "FILL"                   # EDIT THIS: The specific command phr
 BROKER_HOST = "198.18.128.11" # IP of the Mosquitto broker
 BROKER_PORT = 1883
 MQTT_USERNAME = "iotuser"           # Username for MQTT
-MQTT_PASSWORD = "FILL"              # Password for MQTT
+MQTT_PASSWORD = "FILL"              # EDIT THIS: Password for MQTT
 
 # --- MQTT Callbacks ---
 # Corrected on_connect signature
